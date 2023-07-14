@@ -8,8 +8,6 @@ use crate::position::Position;
 //@@Config
 #[cw_serde]
 pub struct Config {
-    pub owner: Addr,
-
     pub base_denom: String,
     pub price_denom: String,
     pub base_decimal: u8,

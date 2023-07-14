@@ -43,7 +43,6 @@ pub fn instantiate(
     let (past_price, _) =
         query_base_coin_price_and_price_coin_price(&deps.querier, &base_denom, &price_denom)?;
     let config = Config {
-        owner: info.sender.to_owned(),
         base_denom: base_denom.to_owned(),
         base_decimal,
         price_denom: price_denom.to_owned(),
@@ -478,8 +477,10 @@ pub mod execute {
         let send_fee_to_valut_msg: CosmosMsg<SeiMsg> = CosmosMsg::Wasm(WasmMsg::Execute {
             contract_addr: config.vault_contract.to_string(),
             msg: to_binary(&VaultExecuteMsg::RecievedFee {
-                denom: config.base_denom.to_owned(),
-                amount: send_base_fee_to_valut,
+                base_denom: config.base_denom.to_owned(),
+                base_amount: send_base_fee_to_valut,
+                price_denom: config.price_denom.to_owned(),
+                price_amount: send_price_fee_to_valut,
             })?,
             funds: vec![
                 coin(send_base_fee_to_valut.into(), config.base_denom),
@@ -517,7 +518,6 @@ pub mod query {
     pub fn get_config(deps: Deps<SeiQueryWrapper>) -> StdResult<GetConfigResponse> {
         let config = load_config(deps.storage)?;
         let Config {
-            owner,
             base_denom,
             price_denom,
             base_decimal,
