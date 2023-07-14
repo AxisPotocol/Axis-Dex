@@ -5,8 +5,6 @@ pub mod helpers;
 
 pub mod query;
 pub mod state;
+pub mod trade;
 
 pub mod position;
-#[cfg(test)]
-mod testing;
-pub mod trade;

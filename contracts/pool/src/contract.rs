@@ -1,3 +1,4 @@
+use axis_protocol::lp_staking::InstantiateMsg as LpStakingInstantiateMsg;
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
 use cosmwasm_std::{
@@ -6,15 +7,18 @@ use cosmwasm_std::{
 };
 use cw2::set_contract_version;
 
-use axis::pool::{ExecuteMsg, InstantiateMsg, QueryMsg};
+use axis_protocol::{
+    core::ExecuteMsg as CoreExecuteMsg,
+    pool::{ExecuteMsg, InstantiateMsg, QueryMsg},
+};
 use sei_cosmwasm::{SeiMsg, SeiQueryWrapper};
 
-use crate::error::ContractError;
+use crate::{error::ContractError, state::load_pool};
 
 use crate::helpers::check::check_funds_and_get_funds;
 
 use crate::helpers::calculate_lp_mint_amount;
-use crate::state::{register_market_contract, save_config, save_pool, Config, Pool};
+use crate::state::{load_config, register_market_contract, save_config, save_pool, Config, Pool};
 
 // version info for migration info
 const CONTRACT_NAME: &str = "crates.io:pool";
@@ -28,39 +32,42 @@ pub fn instantiate(
     msg: InstantiateMsg,
 ) -> Result<Response<SeiMsg>, ContractError> {
     let InstantiateMsg {
-        asset_denom,
-        asset_decimal,
-        stable_denom,
-        stable_decimal,
+        base_denom,
+        base_decimal,
+        price_denom,
+        price_decimal,
         maximum_borrow_rate,
         market_code_id,
         market_instantiate_msg,
+        lp_staking_code_id,
+        axis_contract,
+        maker,
     } = msg;
-
+    let core_contract = info.sender;
     //inital deposit
-    let (asset, stable) = check_funds_and_get_funds(info.funds, &asset_denom, &stable_denom)?;
+    let (base, price) = check_funds_and_get_funds(info.funds, &base_denom, &price_denom)?;
 
-    let (lp_amount, asset_amount, stable_amount) = calculate_lp_mint_amount(
-        asset.amount,
-        stable.amount,
+    let (lp_amount, base_amount, price_amount) = calculate_lp_mint_amount(
+        base.amount,
+        price.amount,
         Uint128::zero(),
         Uint128::zero(),
-        asset_decimal,
-        stable_decimal,
+        base_decimal,
+        price_decimal,
         Uint128::zero(),
         LP_DECIMAL,
     )?;
 
     let lp_denom = "factory/".to_string() + env.contract.address.to_string().as_ref() + "/lp";
     let pool = Pool {
-        asset_denom: asset_denom.clone(),
-        asset_amount,
-        asset_decimal,
-        stable_denom: stable_denom.clone(),
-        stable_amount,
-        stable_decimal,
-        asset_borrow_amount: Uint128::default(),
-        stable_borrow_amount: Uint128::default(),
+        base_denom: base_denom.clone(),
+        base_amount,
+        base_decimal,
+        price_denom: price_denom.clone(),
+        price_amount,
+        price_decimal,
+        base_borrow_amount: Uint128::default(),
+        price_borrow_amount: Uint128::default(),
         lp_denom: lp_denom.clone(),
         lp_total_supply: lp_amount,
         lp_decimal: LP_DECIMAL,
@@ -69,21 +76,40 @@ pub fn instantiate(
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
     save_pool(deps.storage, &pool)?;
     let config = Config {
-        owner: info.sender.clone(),
+        core_contract: core_contract.to_owned(),
         lock: false,
         market_contract: Addr::unchecked(""),
         maximum_borrow_rate,
+        lp_staking_contract: Addr::unchecked(""),
     };
     save_config(deps.storage, &config)?;
+
     let market_instantiate_tx = SubMsg::reply_on_success(
         CosmosMsg::Wasm(WasmMsg::Instantiate {
-            admin: Some(info.sender.to_string()),
+            admin: None,
             code_id: market_code_id,
             msg: to_binary(&market_instantiate_msg)?,
             funds: vec![],
-            label: format!("{:?}:{:?} market", asset_denom, stable_denom),
+            label: format!("{:?}:{:?} market", base_denom, price_denom),
         }),
         1,
+    );
+
+    let lp_staking_instantiate_tx = SubMsg::reply_on_success(
+        CosmosMsg::Wasm(WasmMsg::Instantiate {
+            admin: None,
+            code_id: lp_staking_code_id,
+            msg: to_binary(&LpStakingInstantiateMsg {
+                axis_contract,
+                core_contract,
+                base_denom: base_denom.to_owned(),
+                price_denom: price_denom.to_owned(),
+                lp_denom: lp_denom.to_owned(),
+            })?,
+            funds: vec![],
+            label: format!("{:?}:{:?} market", base_denom, price_denom),
+        }),
+        2,
     );
 
     let lp_create_msg = SeiMsg::CreateDenom {
@@ -91,21 +117,22 @@ pub fn instantiate(
     };
 
     let lp_token = coin(lp_amount.into(), lp_denom);
+
     let initial_lp_mint = SeiMsg::MintTokens {
         amount: lp_token.to_owned(),
     };
 
     let send_msg = SubMsg::new(BankMsg::Send {
-        to_address: info.sender.to_string(),
+        to_address: maker.to_string(),
         amount: vec![lp_token],
     });
 
     Ok(Response::new()
         .add_attribute("method", "instantiate")
         .add_attribute("contract_address", env.contract.address)
-        .add_attribute("asset_denom", asset_denom)
-        .add_attribute("stable_denom", stable_denom)
-        .add_submessage(market_instantiate_tx)
+        .add_attribute("base_denom", base_denom)
+        .add_attribute("price_denom", price_denom)
+        .add_submessages(vec![market_instantiate_tx, lp_staking_instantiate_tx])
         .add_message(lp_create_msg)
         .add_message(initial_lp_mint)
         .add_submessage(send_msg))
@@ -137,19 +164,19 @@ pub fn execute(
 }
 
 pub mod execute {
+
     use crate::{
         helpers::{
             check::{
-                check_funds_and_get_funds, check_lp_funds_and_get_lp_funds, check_market_contract,
+                check_core_contract, check_funds_and_get_funds, check_lock,
+                check_lp_funds_and_get_lp_funds, check_market_contract,
                 check_maximum_leverage_amount, check_repay_denom,
             },
             create_bank_msg,
         },
-        state::{
-            check_lock, check_owner, load_config, load_maximum_borrow_rate, load_pool,
-            save_remove_amount_pool,
-        },
+        state::{load_config, load_maximum_borrow_rate, load_pool, save_remove_amount_pool},
     };
+
     use cosmwasm_std::{coin, BankMsg, CosmosMsg, Decimal, Uint128};
 
     use sei_cosmwasm::SeiMsg;
@@ -166,24 +193,22 @@ pub mod execute {
         check_market_contract(deps.storage, &info.sender)?;
         let mut pool = load_pool(deps.storage)?;
         let denom = match position {
-            true => pool.asset_denom.clone(),
-            false => pool.stable_denom.clone(),
+            true => pool.base_denom.clone(),
+            false => pool.price_denom.clone(),
         };
         let maximum_borrow_rate = load_maximum_borrow_rate(deps.storage)?;
         match position {
-            true => check_maximum_leverage_amount(amount, pool.asset_amount, maximum_borrow_rate)?,
-            false => {
-                check_maximum_leverage_amount(amount, pool.stable_amount, maximum_borrow_rate)?
-            }
+            true => check_maximum_leverage_amount(amount, pool.base_amount, maximum_borrow_rate)?,
+            false => check_maximum_leverage_amount(amount, pool.price_amount, maximum_borrow_rate)?,
         };
         match position {
             true => {
-                pool.asset_amount -= amount;
-                pool.asset_borrow_amount += amount;
+                pool.base_amount -= amount;
+                pool.base_borrow_amount += amount;
             }
             false => {
-                pool.stable_amount -= amount;
-                pool.stable_borrow_amount += amount;
+                pool.price_amount -= amount;
+                pool.price_borrow_amount += amount;
             }
         }
 
@@ -208,12 +233,12 @@ pub mod execute {
         let mut pool = load_pool(deps.storage)?;
         match position {
             true => {
-                pool.asset_amount += amount;
-                pool.asset_borrow_amount -= borrowed_amount;
+                pool.base_amount += amount;
+                pool.base_borrow_amount -= borrowed_amount;
             }
             false => {
-                pool.stable_amount += amount;
-                pool.stable_borrow_amount -= borrowed_amount;
+                pool.price_amount += amount;
+                pool.price_borrow_amount -= borrowed_amount;
             }
         }
         save_pool(deps.storage, &pool)?;
@@ -227,45 +252,45 @@ pub mod execute {
     ) -> Result<Response<SeiMsg>, ContractError> {
         let mut pool = load_pool(deps.storage)?;
 
-        let reserve_stable_amount = pool.stable_amount + pool.stable_borrow_amount;
-        let reserve_asset_amount = pool.asset_amount + pool.asset_borrow_amount;
-        let (send_asset, send_stable) =
-            check_funds_and_get_funds(info.funds, &pool.asset_denom, &pool.stable_denom)?;
+        let reserve_price_amount = pool.price_amount + pool.price_borrow_amount;
+        let reserve_base_amount = pool.base_amount + pool.base_borrow_amount;
+        let (send_base, send_price) =
+            check_funds_and_get_funds(info.funds, &pool.base_denom, &pool.price_denom)?;
 
-        //@@accepted_asset = deposit 가능한 asset_amount
-        //@@accpeted_stable = deposit 가능한 stable_amount
-        let (lp_mint_amount, accept_asset, accept_stable) = calculate_lp_mint_amount(
-            send_asset.amount,
-            send_stable.amount,
-            reserve_asset_amount,
-            reserve_stable_amount,
-            pool.asset_decimal.into(),
-            pool.stable_decimal.into(),
+        //@@accepted_base = deposit 가능한 base_amount
+        //@@accpeted_price = deposit 가능한 price_amount
+        let (lp_mint_amount, accept_base, accept_price) = calculate_lp_mint_amount(
+            send_base.amount,
+            send_price.amount,
+            reserve_base_amount,
+            reserve_price_amount,
+            pool.base_decimal.into(),
+            pool.price_decimal.into(),
             pool.lp_total_supply,
             pool.lp_decimal.into(),
         )?;
         pool.lp_total_supply += lp_mint_amount;
-        pool.asset_amount += accept_asset;
-        pool.stable_amount += accept_stable;
+        pool.base_amount += accept_base;
+        pool.price_amount += accept_price;
         save_pool(deps.storage, &pool)?;
         // save_add_total_supply(deps.storage, &mut pool, lp_mint_amount);
-        // save_add_amount_pool(deps.storage, &mut pool, accepted_asset, accepted_stable)?;
+        // save_add_amount_pool(deps.storage, &mut pool, accepted_base, accepted_price)?;
         let mut bank_msgs = Vec::new();
 
         //남은 금액 정산 시켜주는 로직
         if let Some(msg) = create_bank_msg(
-            accept_asset,
-            send_asset.amount,
-            &send_asset.denom,
+            accept_base,
+            send_base.amount,
+            &send_base.denom,
             &info.sender.to_string(),
         ) {
             bank_msgs.push(msg);
         }
 
         if let Some(msg) = create_bank_msg(
-            accept_stable,
-            send_stable.amount,
-            &send_stable.denom,
+            accept_price,
+            send_price.amount,
+            &send_price.denom,
             &info.sender.to_string(),
         ) {
             bank_msgs.push(msg);
@@ -303,29 +328,29 @@ pub mod execute {
 
         let ratio = Decimal::from_ratio(lp_token.amount, lp_total_supply);
 
-        let withdraw_asset_amount = pool.asset_amount * ratio;
-        let withdraw_stable_amount = pool.stable_amount * ratio;
+        let withdraw_base_amount = pool.base_amount * ratio;
+        let withdraw_price_amount = pool.price_amount * ratio;
 
         save_remove_amount_pool(
             deps.storage,
             &mut pool,
-            withdraw_asset_amount,
-            withdraw_stable_amount,
+            withdraw_base_amount,
+            withdraw_price_amount,
         )?;
 
         let lp_burn_msg = SeiMsg::BurnTokens { amount: lp_token };
 
-        let asset_bank_msg = CosmosMsg::Bank(BankMsg::Send {
+        let base_bank_msg = CosmosMsg::Bank(BankMsg::Send {
             to_address: info.sender.to_string(),
-            amount: vec![coin(withdraw_asset_amount.into(), pool.asset_denom)],
+            amount: vec![coin(withdraw_base_amount.into(), pool.base_denom)],
         });
-        let stable_bank_msg = CosmosMsg::Bank(BankMsg::Send {
+        let price_bank_msg = CosmosMsg::Bank(BankMsg::Send {
             to_address: info.sender.to_string(),
-            amount: vec![coin(withdraw_stable_amount.into(), pool.stable_denom)],
+            amount: vec![coin(withdraw_price_amount.into(), pool.price_denom)],
         });
         Ok(Response::new()
-            .add_message(asset_bank_msg)
-            .add_message(stable_bank_msg)
+            .add_message(base_bank_msg)
+            .add_message(price_bank_msg)
             .add_message(lp_burn_msg))
     }
 
@@ -334,7 +359,8 @@ pub mod execute {
         _env: Env,
         info: MessageInfo,
     ) -> Result<Response<SeiMsg>, ContractError> {
-        check_owner(deps.storage, info.sender)?;
+        let config = load_config(deps.storage)?;
+        check_core_contract(&config.core_contract, &info.sender)?;
         let mut config = load_config(deps.storage)?;
         config.lock = true;
         save_config(deps.storage, &config)?;
@@ -345,41 +371,12 @@ pub mod execute {
         _env: Env,
         info: MessageInfo,
     ) -> Result<Response<SeiMsg>, ContractError> {
-        check_owner(deps.storage, info.sender)?;
+        let config = load_config(deps.storage)?;
+        check_core_contract(&config.core_contract, &info.sender)?;
         let mut config = load_config(deps.storage)?;
         config.lock = false;
         save_config(deps.storage, &config)?;
         Ok(Response::default())
-    }
-}
-
-#[cfg_attr(not(feature = "library"), entry_point)]
-pub fn reply(
-    deps: DepsMut<SeiQueryWrapper>,
-    _env: Env,
-    msg: Reply,
-) -> Result<Response<SeiMsg>, ContractError> {
-    match msg.id {
-        1 => {
-            // get new market contract address
-            match msg.result {
-                SubMsgResult::Ok(res) => match res.data {
-                    Some(data) => {
-                        let market_contract_addr = String::from_utf8(data.0).unwrap();
-
-                        register_market_contract(
-                            deps.storage,
-                            Addr::unchecked(market_contract_addr),
-                        )?;
-                        Ok(Response::new())
-                    }
-                    None => Err(ContractError::MissingMarketContractAddr {}),
-                },
-                SubMsgResult::Err(_) => Err(ContractError::MarketContractInstantiationFailed {}),
-            }
-        }
-
-        _ => Err(ContractError::InvalidReplyId {}),
     }
 }
 
@@ -398,7 +395,9 @@ pub fn query(deps: Deps<SeiQueryWrapper>, _env: Env, msg: QueryMsg) -> StdResult
 
 pub mod query {
     use crate::state::{load_config, load_pool};
-    use axis::pool::{ConfigResponse, PoolResponse, PositionBalance, PositionInformationResponse};
+    use axis_protocol::pool::{
+        ConfigResponse, PoolResponse, PositionBalance, PositionInformationResponse,
+    };
 
     use super::*;
     pub fn get_position_balance(
@@ -408,10 +407,10 @@ pub mod query {
         let pool = load_pool(deps.storage)?;
         match position {
             true => Ok(PositionBalance {
-                amount: pool.asset_amount,
+                amount: pool.base_amount,
             }),
             false => Ok(PositionBalance {
-                amount: pool.stable_amount,
+                amount: pool.price_amount,
             }),
         }
     }
@@ -422,14 +421,14 @@ pub mod query {
         let pool = load_pool(deps.storage)?;
         match position {
             true => Ok(PositionInformationResponse {
-                denom: pool.asset_denom,
-                amount: pool.asset_amount,
-                decimal: pool.asset_decimal,
+                denom: pool.base_denom,
+                amount: pool.base_amount,
+                decimal: pool.base_decimal,
             }),
             false => Ok(PositionInformationResponse {
-                denom: pool.stable_denom,
-                amount: pool.stable_amount,
-                decimal: pool.stable_decimal,
+                denom: pool.price_denom,
+                amount: pool.price_amount,
+                decimal: pool.price_decimal,
             }),
         }
     }
@@ -437,21 +436,23 @@ pub mod query {
         let config = load_config(deps.storage)?;
 
         Ok(ConfigResponse {
-            market_contract: config.market_contract.to_string(),
+            market_contract: config.market_contract,
             maximum_borrow_rate: config.maximum_borrow_rate,
+            lock: config.lock,
+            lp_staking_contract: config.lp_staking_contract,
         })
     }
     pub fn get_pool(deps: Deps<SeiQueryWrapper>) -> StdResult<PoolResponse> {
         let pool = load_pool(deps.storage)?;
         Ok(PoolResponse {
-            asset_denom: pool.asset_denom,
-            asset_amount: pool.asset_amount,
-            asset_decimal: pool.asset_decimal,
-            stable_denom: pool.stable_denom,
-            stable_amount: pool.stable_amount,
-            stable_decimal: pool.stable_decimal,
-            asset_borrow_amount: pool.asset_borrow_amount,
-            stable_borrow_amount: pool.stable_borrow_amount,
+            base_denom: pool.base_denom,
+            base_amount: pool.base_amount,
+            base_decimal: pool.base_decimal,
+            price_denom: pool.price_denom,
+            price_amount: pool.price_amount,
+            price_decimal: pool.price_decimal,
+            base_borrow_amount: pool.base_borrow_amount,
+            price_borrow_amount: pool.price_borrow_amount,
             lp_decimal: pool.lp_decimal,
             lp_denom: pool.lp_denom,
             lp_total_supply: pool.lp_total_supply,
@@ -459,5 +460,66 @@ pub mod query {
     }
 }
 
-#[cfg(test)]
-mod tests {}
+#[cfg_attr(not(feature = "library"), entry_point)]
+pub fn reply(
+    deps: DepsMut<SeiQueryWrapper>,
+    _env: Env,
+    msg: Reply,
+) -> Result<Response<SeiMsg>, ContractError> {
+    match msg.id {
+        1 => {
+            // get new market contract address
+            match msg.result {
+                SubMsgResult::Ok(res) => match res.data {
+                    Some(data) => {
+                        let mut config = load_config(deps.storage)?;
+                        let market_contract_addr = deps
+                            .api
+                            .addr_validate(&String::from_utf8(data.0).unwrap())?;
+                        config.market_contract = market_contract_addr.clone();
+                        save_config(deps.storage, &config)?;
+                        let pool = load_pool(deps.storage)?;
+                        let core_register_market_msg = CosmosMsg::Wasm(WasmMsg::Execute {
+                            contract_addr: config.core_contract.to_string(),
+                            msg: to_binary(&CoreExecuteMsg::RegisterPairMarket {
+                                base_denom: pool.base_denom,
+                                price_denom: pool.price_denom,
+                                market_contract: market_contract_addr,
+                            })?,
+                            funds: vec![],
+                        });
+                        Ok(Response::new().add_message(core_register_market_msg))
+                    }
+                    None => Err(ContractError::MissingMarketContractAddr {}),
+                },
+                SubMsgResult::Err(_) => Err(ContractError::MarketContractInstantiationFailed {}),
+            }
+        }
+        2 => match msg.result {
+            SubMsgResult::Ok(res) => match res.data {
+                Some(data) => {
+                    let mut config = load_config(deps.storage)?;
+                    let lp_staking_contract_addr = deps
+                        .api
+                        .addr_validate(&String::from_utf8(data.0).unwrap())?;
+                    config.lp_staking_contract = lp_staking_contract_addr.clone();
+                    save_config(deps.storage, &config)?;
+                    let pool = load_pool(deps.storage)?;
+                    let core_register_lp_staking_msg = CosmosMsg::Wasm(WasmMsg::Execute {
+                        contract_addr: config.core_contract.to_string(),
+                        msg: to_binary(&CoreExecuteMsg::RegisterPairLpStaking {
+                            base_denom: pool.base_denom,
+                            price_denom: pool.price_denom,
+                            lp_contract: lp_staking_contract_addr,
+                        })?,
+                        funds: vec![],
+                    });
+                    Ok(Response::new().add_message(core_register_lp_staking_msg))
+                }
+                None => Err(ContractError::MissingMarketContractAddr {}),
+            },
+            SubMsgResult::Err(_) => Err(ContractError::LpStakingContractInstantiationFailed {}),
+        },
+        _ => Err(ContractError::InvalidReplyId {}),
+    }
+}

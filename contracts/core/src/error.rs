@@ -9,8 +9,8 @@ pub enum ContractError {
     #[error("Unauthorized")]
     Unauthorized {},
 
-    #[error("Invalid Stable Denom")]
-    InvalidStable {},
+    #[error("Invalid Price Denom")]
+    InvalidPrice {},
 
     #[error("Invalid Denom")]
     InvalidDenom {},
@@ -21,8 +21,8 @@ pub enum ContractError {
     MissingPoolContractAddr {},
     #[error("Pool Contract Instantiate Failed")]
     PoolContractInstantiationFailed {},
-    #[error("Treasury Contract Instantiate Failed")]
-    TreasuryContractInstantiationFailed {},
+    #[error("Axis Contract Instantiate Failed")]
+    AxisContractInstantiationFailed {},
     #[error("Invalid Reply ID")]
     InvalidReplyId {},
 }

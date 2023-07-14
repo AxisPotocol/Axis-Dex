@@ -1,20 +1,20 @@
 use cosmwasm_schema::cw_serde;
 
 use cosmwasm_std::{Addr, Response, StdResult, Storage, Uint128};
-use cw_storage_plus::Item;
+use cw_storage_plus::{Item, Map};
 
 use crate::error::ContractError;
 
 #[cw_serde]
 pub struct Pool {
-    pub asset_denom: String,
-    pub asset_amount: Uint128,
-    pub asset_decimal: u8,
-    pub stable_denom: String,
-    pub stable_amount: Uint128,
-    pub stable_decimal: u8,
-    pub asset_borrow_amount: Uint128,
-    pub stable_borrow_amount: Uint128,
+    pub base_denom: String,
+    pub base_amount: Uint128,
+    pub base_decimal: u8,
+    pub price_denom: String,
+    pub price_amount: Uint128,
+    pub price_decimal: u8,
+    pub base_borrow_amount: Uint128,
+    pub price_borrow_amount: Uint128,
     pub lp_total_supply: Uint128,
     pub lp_decimal: u8,
     pub lp_denom: String,
@@ -32,21 +32,21 @@ pub fn load_pool(storage: &dyn Storage) -> StdResult<Pool> {
 pub fn save_add_amount_pool(
     storage: &mut dyn Storage,
     pool: &mut Pool,
-    asset_amount: Uint128,
-    stable_amount: Uint128,
+    base_amount: Uint128,
+    price_amount: Uint128,
 ) -> StdResult<()> {
-    pool.asset_amount += asset_amount;
-    pool.stable_amount += stable_amount;
+    pool.base_amount += base_amount;
+    pool.price_amount += price_amount;
     save_pool(storage, &pool)
 }
 pub fn save_remove_amount_pool(
     storage: &mut dyn Storage,
     pool: &mut Pool,
-    asset_amount: Uint128,
-    stable_amount: Uint128,
+    base_amount: Uint128,
+    price_amount: Uint128,
 ) -> StdResult<()> {
-    pool.asset_amount -= asset_amount;
-    pool.stable_amount -= stable_amount;
+    pool.base_amount -= base_amount;
+    pool.price_amount -= price_amount;
     save_pool(storage, &pool)
 }
 pub fn save_add_total_supply(
@@ -60,10 +60,11 @@ pub fn save_add_total_supply(
 
 #[cw_serde]
 pub struct Config {
-    pub owner: Addr,
+    pub core_contract: Addr,
     pub lock: bool,
     pub market_contract: Addr,
     pub maximum_borrow_rate: u8,
+    pub lp_staking_contract: Addr,
 }
 pub fn register_market_contract(
     storage: &mut dyn Storage,
@@ -97,21 +98,6 @@ pub fn load_market_contract(storage: &dyn Storage) -> StdResult<Addr> {
 pub fn load_maximum_borrow_rate(storage: &dyn Storage) -> StdResult<u8> {
     let config = load_config(storage)?;
     Ok(config.maximum_borrow_rate)
-}
-
-pub fn check_lock(storage: &mut dyn Storage) -> Result<(), ContractError> {
-    let config = load_config(storage)?;
-    match config.lock {
-        true => Err(ContractError::PoolLock {}),
-        false => Ok(()),
-    }
-}
-pub fn check_owner(storage: &mut dyn Storage, sender: Addr) -> Result<(), ContractError> {
-    let config = load_config(storage)?;
-    match config.owner == sender {
-        true => Ok(()),
-        false => Err(ContractError::Unauthorized {}),
-    }
 }
 
 pub const POOL: Item<Pool> = Item::new("pool");

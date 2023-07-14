@@ -5,7 +5,7 @@ use crate::{
     error::ContractError,
     helpers::check::check_collateral_value,
     position::Position,
-    state::{config_fee_zero_reset, Config},
+    state::{state_fee_zero_reset, Config, State},
     trade::{trade_remove, PriceDestinatedStatus, Trade},
 };
 const MINIMUM_USD_VALUE: u8 = 10;
@@ -38,13 +38,13 @@ pub fn get_collateral_usd(
     Ok(collateral_usd)
 }
 pub fn get_usd_amount(
-    asset_amount: Uint128,
-    asset_decimal: u8,
-    asset_price: Decimal,
+    base_amount: Uint128,
+    base_decimal: u8,
+    base_price: Decimal,
 ) -> Result<Decimal, ContractError> {
-    let usd = Decimal::from_atomics(asset_amount, asset_decimal.into())
+    let usd = Decimal::from_atomics(base_amount, base_decimal.into())
         .map_err(|_| ContractError::ConvertError {})?
-        * asset_price;
+        * base_price;
     Ok(usd)
 }
 //@@ 청산 금액 계산
@@ -182,13 +182,14 @@ pub fn get_trader_profit_amount(
 pub fn control_desitinated_traders(
     storage: &mut dyn Storage,
     config: &mut Config,
-    asset_price: Decimal,
+    state: &mut State,
+    base_price: Decimal,
     stable_price: Decimal,
     trader_status: PriceDestinatedStatus,
-    asset_coin_to_pool: &mut Coin,
+    base_coin_to_pool: &mut Coin,
     stable_coin_to_pool: &mut Coin,
-    close_fee_rate: u8,
-    asset_leveraged_amount: &mut Uint128,
+
+    base_leveraged_amount: &mut Uint128,
     stable_leveraged_amount: &mut Uint128,
 ) -> Result<Vec<CosmosMsg<SeiMsg>>, ContractError> {
     let mut bank_msgs: Vec<CosmosMsg<SeiMsg>> = vec![];
@@ -209,7 +210,7 @@ pub fn control_desitinated_traders(
                     ..
                 } = trade;
                 match trade_position {
-                    Position::Long => *asset_leveraged_amount += leverage_amount,
+                    Position::Long => *base_leveraged_amount += leverage_amount,
                     Position::Short => *stable_leveraged_amount += leverage_amount,
                 }
 
@@ -220,8 +221,8 @@ pub fn control_desitinated_traders(
                         entry_price,
                         limit_loss_price,
                         collateral_amount,
-                        config.asset_decimal,
-                        asset_price,
+                        config.base_decimal,
+                        base_price,
                         leverage,
                     )?,
                     Position::Short => get_trader_amount(
@@ -230,12 +231,13 @@ pub fn control_desitinated_traders(
                         entry_price,
                         limit_loss_price,
                         collateral_amount,
-                        config.stable_decimal,
+                        config.price_decimal,
                         stable_price,
                         leverage,
                     )?,
                 };
-                let close_fee_amount = calculate_close_fee_amount(trader_amount, close_fee_rate);
+                let close_fee_amount =
+                    calculate_close_fee_amount(trader_amount, config.open_close_fee_rate);
                 trader_amount -= close_fee_amount;
 
                 let bank_msg: CosmosMsg<SeiMsg> = CosmosMsg::Bank(BankMsg::Send {
@@ -248,12 +250,12 @@ pub fn control_desitinated_traders(
 
                 match trade_position {
                     Position::Long => {
-                        asset_coin_to_pool.amount += send_amount_to_pool;
-                        config.asset_total_fee += close_fee_amount;
+                        base_coin_to_pool.amount += send_amount_to_pool;
+                        state.base_coin_total_fee += close_fee_amount;
                     }
                     Position::Short => {
                         stable_coin_to_pool.amount += send_amount_to_pool;
-                        config.stable_total_fee += close_fee_amount
+                        state.price_coin_total_fee += close_fee_amount
                     }
                 }
                 trade_remove(storage, trader)?;
@@ -265,20 +267,20 @@ pub fn control_desitinated_traders(
                 //청산시 보증금의 0.1% 를 공제
 
                 let close_fee_amount =
-                    calculate_close_fee_amount(trade.collateral_amount, close_fee_rate);
+                    calculate_close_fee_amount(trade.collateral_amount, config.open_close_fee_rate);
 
                 let send_amount_to_pool =
                     trade.collateral_amount + trade.leverage_amount - close_fee_amount;
 
                 match trade.position {
                     Position::Long => {
-                        asset_coin_to_pool.amount += send_amount_to_pool;
-                        config.asset_total_fee += close_fee_amount;
-                        *asset_leveraged_amount += trade.leverage_amount;
+                        base_coin_to_pool.amount += send_amount_to_pool;
+                        state.base_coin_total_fee += close_fee_amount;
+                        *base_leveraged_amount += trade.leverage_amount;
                     }
                     Position::Short => {
                         stable_coin_to_pool.amount += send_amount_to_pool;
-                        config.stable_total_fee += close_fee_amount;
+                        state.price_coin_total_fee += close_fee_amount;
                         *stable_leveraged_amount += trade.leverage_amount;
                     }
                 }
@@ -308,8 +310,8 @@ pub fn control_desitinated_traders(
                         entry_price,
                         limit_profit_price,
                         collateral_amount,
-                        config.asset_decimal,
-                        asset_price,
+                        config.base_decimal,
+                        base_price,
                         leverage,
                     )?,
                     Position::Short => get_trader_amount(
@@ -318,12 +320,13 @@ pub fn control_desitinated_traders(
                         entry_price,
                         limit_profit_price,
                         collateral_amount,
-                        config.stable_decimal,
+                        config.price_decimal,
                         stable_price,
                         leverage,
                     )?,
                 };
-                let close_fee_amount = calculate_close_fee_amount(trader_amount, close_fee_rate);
+                let close_fee_amount =
+                    calculate_close_fee_amount(trader_amount, config.open_close_fee_rate);
 
                 trader_amount -= close_fee_amount;
 
@@ -336,13 +339,13 @@ pub fn control_desitinated_traders(
                     collateral_amount + leverage_amount - trader_amount - close_fee_amount;
                 match trade_position {
                     Position::Long => {
-                        asset_coin_to_pool.amount += send_amount_to_pool;
-                        config.asset_total_fee += close_fee_amount;
-                        *asset_leveraged_amount += leverage_amount;
+                        base_coin_to_pool.amount += send_amount_to_pool;
+                        state.base_coin_total_fee += close_fee_amount;
+                        *base_leveraged_amount += leverage_amount;
                     }
                     Position::Short => {
                         stable_coin_to_pool.amount += send_amount_to_pool;
-                        config.stable_total_fee += close_fee_amount;
+                        state.price_coin_total_fee += close_fee_amount;
                         *stable_leveraged_amount += leverage_amount;
                     }
                 }
@@ -353,16 +356,16 @@ pub fn control_desitinated_traders(
     Ok(bank_msgs)
 }
 
-pub fn fee_division(config: &mut Config) -> (Uint128, Uint128, Uint128, Uint128) {
-    let send_asset_fee_to_pool = calculate_percentage(config.asset_total_fee, 70);
-    let send_stable_fee_to_pool = calculate_percentage(config.stable_total_fee, 70);
-    let send_asset_fee_to_valut = calculate_percentage(config.asset_total_fee, 30);
-    let send_stable_fee_to_valut = calculate_percentage(config.stable_total_fee, 30);
-    config_fee_zero_reset(config);
+pub fn fee_division(state: &mut State) -> (Uint128, Uint128, Uint128, Uint128) {
+    let send_base_fee_to_pool = calculate_percentage(state.base_coin_total_fee, 70);
+    let send_stable_fee_to_pool = calculate_percentage(state.price_coin_total_fee, 70);
+    let send_base_fee_to_valut = calculate_percentage(state.base_coin_total_fee, 30);
+    let send_stable_fee_to_valut = calculate_percentage(state.price_coin_total_fee, 30);
+    state_fee_zero_reset(state);
     (
-        send_asset_fee_to_pool,
+        send_base_fee_to_pool,
         send_stable_fee_to_pool,
-        send_asset_fee_to_valut,
+        send_base_fee_to_valut,
         send_stable_fee_to_valut,
     )
 }
@@ -423,12 +426,12 @@ pub mod check {
         let collateral = match position {
             Position::Long => funds
                 .into_iter()
-                .find(|c| c.denom == config.asset_denom)
+                .find(|c| c.denom == config.base_denom)
                 .ok_or_else(|| ContractError::InvalidDenom {})?,
 
             Position::Short => funds
                 .into_iter()
-                .find(|c| c.denom == config.stable_denom)
+                .find(|c| c.denom == config.price_denom)
                 .ok_or_else(|| ContractError::InvalidDenom {})?,
         };
 

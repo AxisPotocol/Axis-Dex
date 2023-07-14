@@ -17,7 +17,7 @@ use cw_multi_test::{
     StakeKeeper, WasmKeeper,
 };
 
-use axis::{
+use axis_protocol::{
     core::{
         ConfigResponse as CoreConfigResponse, ExecuteMsg as CoreExecuteMsg,
         InstantiateMsg as CoreInstantiateMsg, PairContractResponse, QueryMsg as CoreQueryMsg,
@@ -29,17 +29,14 @@ use axis::{
 use sei_cosmwasm::{DenomOracleExchangeRatePair, OracleExchangeRate, SeiMsg, SeiQueryWrapper};
 use sei_integration_tests::module::SeiModule;
 
-use super::test_market::contract::{
-    execute as market_execute, instantiate as market_instantiate, query as market_query,
+use axis::contract::{
+    execute as axis_execute, instantiate as axis_instantiate, query as axis_query,
 };
 use core::{
     contract::{execute as core_execute, instantiate as core_instantiate, query as core_query},
     error::ContractError as CoreContractError,
     helpers::find_attribute_value,
-    state::{register_pair, register_treasury},
-};
-use treasury::contract::{
-    execute as treasury_execute, instantiate as treasury_instantiate, query as treasury_query,
+    state::{register_axis, register_pair},
 };
 
 pub const ADMIN: &str = "admin";
@@ -161,15 +158,13 @@ pub fn setup_test(
                     Some(data) => {
                         let traesury_contract_addr =
                             String::from_utf8(data.0[2..].to_vec()).unwrap();
-                        println!("treasury {:?}", traesury_contract_addr);
-                        register_treasury(deps.storage, Addr::unchecked(traesury_contract_addr))?;
+                        println!("axis {:?}", traesury_contract_addr);
+                        register_axis(deps.storage, Addr::unchecked(traesury_contract_addr))?;
                         Ok(Response::new())
                     }
-                    None => Err(CoreContractError::TreasuryContractInstantiationFailed {}),
+                    None => Err(CoreContractError::AxisContractInstantiationFailed {}),
                 },
-                SubMsgResult::Err(_) => {
-                    Err(CoreContractError::TreasuryContractInstantiationFailed {})
-                }
+                SubMsgResult::Err(_) => Err(CoreContractError::AxisContractInstantiationFailed {}),
             },
             2 => match msg.result {
                 SubMsgResult::Ok(res) => match res.data {
@@ -197,10 +192,10 @@ pub fn setup_test(
             _ => Err(CoreContractError::InvalidReplyId {}),
         }),
     ));
-    let treasury_code = app.store_code(Box::new(ContractWrapper::new(
-        treasury_execute,
-        treasury_instantiate,
-        treasury_query,
+    let axis_code = app.store_code(Box::new(ContractWrapper::new(
+        axis_execute,
+        axis_instantiate,
+        axis_query,
     )));
     let core_contract = app
         .instantiate_contract(
@@ -208,7 +203,7 @@ pub fn setup_test(
             Addr::unchecked(ADMIN),
             &CoreInstantiateMsg {
                 accept_stable_denoms: vec!["uusdc".to_string()],
-                rune_treasury_code_id: treasury_code,
+                rune_axis_code_id: axis_code,
             },
             &vec![],
             "RUNE CORE",
@@ -220,7 +215,7 @@ pub fn setup_test(
         .wrap()
         .query_wasm_smart(core_contract.to_owned(), &CoreQueryMsg::GetConfig {})
         .unwrap();
-    let treasury_contract = core_config_res.treausry_contract_address;
+    let axis_contract = core_config_res.treausry_contract_address;
 
     let market_code = app.store_code(Box::new(ContractWrapper::new(execute, instantiate, query))); //::<SeiMsg, SeiQueryWrapper>
     let pool_code = app.store_code(Box::new(
@@ -267,7 +262,7 @@ pub fn setup_test(
                 borrow_fee_rate: 1,
                 open_close_fee_rate: 1,
                 limit_profit_loss_open_fee_rate: 2,
-                treasury_contract,
+                axis_contract,
                 // pool_contract: "abc".to_string(),
                 // fee_vault_contract: "bdd".to_string(),
             },

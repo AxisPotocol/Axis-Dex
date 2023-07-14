@@ -38,4 +38,10 @@ pub enum ContractError {
 
     #[error("Pool is Lock")]
     PoolLock {},
+
+    #[error("Lp staking Contract Missing Failed")]
+    LpStakingContractInstantiationFailed {},
+
+    #[error("Missing Lp staking Contract Addr")]
+    MissingLpStakingContractAddr {},
 }

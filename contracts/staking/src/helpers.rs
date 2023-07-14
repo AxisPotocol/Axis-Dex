@@ -1,46 +1,74 @@
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use cosmwasm_std::{Addr, Attribute, Coin, Decimal, Order, StdResult, Storage, Uint128};
+use cw_storage_plus::Bound;
 
-use cosmwasm_std::{
-    to_binary, Addr, CosmosMsg, CustomQuery, Querier, QuerierWrapper, StdResult, WasmMsg, WasmQuery,
+use crate::{
+    contract::ONE_DAY_PER_MINT,
+    error::ContractError,
+    state::{load_config, save_config, EPOCH_STAKING_AMOUNT},
 };
 
-use crate::msg::{ExecuteMsg, GetCountResponse, QueryMsg};
+pub fn check_funds_and_get_axis(
+    funds: Vec<Coin>,
+    axis_denom: &String,
+) -> Result<Coin, ContractError> {
+    let asset = funds
+        .iter()
+        .find(|c| c.denom == *axis_denom)
+        .ok_or_else(|| ContractError::InvalidDenom {})?;
 
-/// CwTemplateContract is a wrapper around Addr that provides a lot of helpers
-/// for working with this.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
-pub struct CwTemplateContract(pub Addr);
+    Ok(asset.clone())
+}
 
-impl CwTemplateContract {
-    pub fn addr(&self) -> Addr {
-        self.0.clone()
+pub fn compute_mint_amount(
+    storage: &dyn Storage,
+    staking_amount: Uint128,
+    start: u64,
+    now: u64,
+) -> StdResult<Uint128> {
+    if start == now {
+        return Ok(Uint128::zero());
     }
+    let total = EPOCH_STAKING_AMOUNT
+        .range(
+            storage,
+            Some(Bound::inclusive(start)),
+            Some(Bound::exclusive(now)),
+            Order::Ascending,
+        )
+        .into_iter()
+        .map(|epoch_staking| {
+            let (_, epoch_total_amount) = epoch_staking?;
+            let ratio = Decimal::from_ratio(staking_amount, epoch_total_amount);
+            let mint_amount = Uint128::new(ONE_DAY_PER_MINT) * ratio;
+            Ok(mint_amount)
+        })
+        .sum::<StdResult<Uint128>>()?;
 
-    pub fn call<T: Into<ExecuteMsg>>(&self, msg: T) -> StdResult<CosmosMsg> {
-        let msg = to_binary(&msg.into())?;
-        Ok(WasmMsg::Execute {
-            contract_addr: self.addr().into(),
-            msg,
-            funds: vec![],
+    Ok(total)
+}
+
+pub fn check_core_contract(core: &Addr, sender: &Addr) -> Result<(), ContractError> {
+    match *core == *sender {
+        true => Ok(()),
+        false => Err(ContractError::Unauthorized {}),
+    }
+}
+
+pub fn find_attribute_value(
+    attributes: &Vec<Attribute>,
+    key: &str,
+) -> Result<String, ContractError> {
+    for attribute in attributes {
+        if attribute.key == key {
+            return Ok(attribute.value.to_string());
         }
-        .into())
     }
+    Err(ContractError::ESAxisContractInstantiateFailed {})
+}
 
-    /// Get Count
-    pub fn count<Q, T, CQ>(&self, querier: &Q) -> StdResult<GetCountResponse>
-    where
-        Q: Querier,
-        T: Into<String>,
-        CQ: CustomQuery,
-    {
-        let msg = QueryMsg::GetCount {};
-        let query = WasmQuery::Smart {
-            contract_addr: self.addr().into(),
-            msg: to_binary(&msg)?,
-        }
-        .into();
-        let res: GetCountResponse = QuerierWrapper::<CQ>::new(querier).query(&query)?;
-        Ok(res)
-    }
+pub fn register_es_axis(storage: &mut dyn Storage, es_axis_contract: Addr) -> StdResult<()> {
+    let mut config = load_config(storage)?;
+    config.es_axis_contract = es_axis_contract;
+    save_config(storage, &config)?;
+    Ok(())
 }

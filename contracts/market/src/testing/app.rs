@@ -3,6 +3,14 @@ use super::scenario::{
 };
 use crate::contract::{execute, instantiate, query};
 
+use axis_protocol::{
+    core::{
+        ConfigResponse as CoreConfigResponse, ExecuteMsg as CoreExecuteMsg,
+        InstantiateMsg as CoreInstantiateMsg, PairContractResponse, QueryMsg as CoreQueryMsg,
+    },
+    market::InstantiateMsg as MarketInstantiateMsg,
+    pool::{ConfigResponse, InstantiateMsg as PoolInstantiateMsg, QueryMsg as PoolQueryMsg},
+};
 use core::{
     contract::{execute as core_execute, instantiate as core_instantiate, query as core_query},
     error::ContractError as CoreContractError,
@@ -23,14 +31,6 @@ use pool::{
     contract::{execute as pool_execute, instantiate as pool_instantiate, query as pool_query},
     error::ContractError,
     state::register_market_contract,
-};
-use rune::{
-    core::{
-        ConfigResponse as CoreConfigResponse, ExecuteMsg as CoreExecuteMsg,
-        InstantiateMsg as CoreInstantiateMsg, PairContractResponse, QueryMsg as CoreQueryMsg,
-    },
-    market::InstantiateMsg as MarketInstantiateMsg,
-    pool::{ConfigResponse, InstantiateMsg as PoolInstantiateMsg, QueryMsg as PoolQueryMsg},
 };
 use sei_cosmwasm::{SeiMsg, SeiQueryWrapper};
 use sei_integration_tests::module::SeiModule;

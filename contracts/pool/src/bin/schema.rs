@@ -1,4 +1,4 @@
-use axis::pool::{ExecuteMsg, InstantiateMsg, QueryMsg};
+use axis_protocol::pool::{ExecuteMsg, InstantiateMsg, QueryMsg};
 use cosmwasm_schema::write_api;
 
 fn main() {

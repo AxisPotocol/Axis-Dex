@@ -1,9 +1,9 @@
 use std::str::FromStr;
 
+use axis_protocol::market::{ExecuteMsg, QueryMsg, TradeResponse};
+use axis_protocol::pool::{PoolResponse, PositionBalance, QueryMsg as PoolQueryMsg};
 use cosmwasm_std::{coin, Addr, Coin, Decimal, Uint128, Uint64};
 use cw_multi_test::Executor;
-use rune::market::{ExecuteMsg, QueryMsg, TradeResponse};
-use rune::pool::{PoolResponse, PositionBalance, QueryMsg as PoolQueryMsg};
 use sei_cosmwasm::{DenomOracleExchangeRatePair, OracleExchangeRate};
 use sei_integration_tests::helper::mock_app;
 

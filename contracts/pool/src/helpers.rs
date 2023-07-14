@@ -83,8 +83,23 @@ pub fn calculate_lp_mint_amount(
 pub mod check {
     use cosmwasm_std::{Addr, Coin, Decimal, Storage, Uint128};
 
-    use crate::{error::ContractError, state::load_market_contract};
-
+    use crate::{
+        error::ContractError,
+        state::{load_config, load_market_contract},
+    };
+    pub fn check_lock(storage: &mut dyn Storage) -> Result<(), ContractError> {
+        let config = load_config(storage)?;
+        match config.lock {
+            true => Err(ContractError::PoolLock {}),
+            false => Ok(()),
+        }
+    }
+    pub fn check_core_contract(core_contract: &Addr, sender: &Addr) -> Result<(), ContractError> {
+        match core_contract == sender {
+            true => Ok(()),
+            false => Err(ContractError::Unauthorized {}),
+        }
+    }
     pub fn check_market_contract(
         storage: &mut dyn Storage,
         sender: &Addr,

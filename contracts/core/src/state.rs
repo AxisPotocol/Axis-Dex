@@ -8,8 +8,11 @@ use crate::ContractError;
 #[cw_serde]
 pub struct Config {
     pub owner: Addr,
-    pub accept_stable_denoms: Vec<String>,
-    pub treausry_contract_address: Addr,
+    pub epoch: u64,
+    pub accept_price_denoms: Vec<String>,
+    pub axis_contract: Addr,
+    pub staking_contract: Addr,
+    pub vault_contract: Addr,
 }
 
 pub fn save_config(storage: &mut dyn Storage, config: &Config) -> StdResult<()> {
@@ -20,40 +23,43 @@ pub fn save_config(storage: &mut dyn Storage, config: &Config) -> StdResult<()> 
 pub fn load_config(storage: &dyn Storage) -> StdResult<Config> {
     CONFIG.load(storage)
 }
-pub fn register_treasury(storage: &mut dyn Storage, treasury_contract: Addr) -> StdResult<()> {
+pub fn register_axis_contract(storage: &mut dyn Storage, axis_contract: Addr) -> StdResult<()> {
     let mut config = load_config(storage)?;
-    config.treausry_contract_address = treasury_contract;
+    config.axis_contract = axis_contract;
     save_config(storage, &config)?;
     Ok(())
 }
 
 pub fn load_pair(
     storage: &dyn Storage,
-    asset_denom: &String,
-    stable_denom: &String,
+    base_denom: &String,
+    price_denom: &String,
 ) -> StdResult<Addr> {
-    PAIR_POOL.load(storage, (asset_denom.to_string(), stable_denom.to_string()))
+    PAIR_POOL.load(storage, (base_denom, price_denom))
 }
 pub fn check_pair(
     storage: &dyn Storage,
-    asset_denom: &String,
-    stable_denom: &String,
+    base_denom: &String,
+    price_denom: &String,
 ) -> Result<(), ContractError> {
-    match PAIR_POOL.load(storage, (asset_denom.to_string(), stable_denom.to_string())) {
+    match PAIR_POOL.load(storage, (base_denom, price_denom)) {
         Ok(_) => Err(ContractError::AlreadyExistsPair {}),
         Err(_) => Ok(()),
     }
 }
 
-pub fn register_pair(
+pub fn register_pair_pool_contract(
     storage: &mut dyn Storage,
-    asset_denom: String,
-    stable_denom: String,
+    base_denom: &String,
+    price_denom: &String,
     pool_contract: Addr,
 ) -> StdResult<()> {
-    PAIR_POOL.save(storage, (asset_denom, stable_denom), &pool_contract)
+    PAIR_POOL.save(storage, (base_denom, price_denom), &pool_contract)
 }
 
 pub const CONFIG: Item<Config> = Item::new("config");
 
-pub const PAIR_POOL: Map<(String, String), Addr> = Map::new("pair");
+pub const PAIR_POOL: Map<(&String, &String), Addr> = Map::new("pair");
+pub const PAIR_POOL_LP_STAKING_CONTRACT: Map<(&String, &String), Addr> =
+    Map::new("pair_lp_contract");
+pub const PAIR_MARKET_CONTRACT: Map<(&String, &String), Addr> = Map::new("pair_market_contract");

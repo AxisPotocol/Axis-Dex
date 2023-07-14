@@ -1,27 +1,33 @@
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use cosmwasm_std::{Addr, Coin};
 
-use cosmwasm_std::{to_binary, Addr, CosmosMsg, StdResult, WasmMsg};
+use crate::ContractError;
 
-use crate::msg::ExecuteMsg;
+pub fn check_funds_and_get_token(funds: Vec<Coin>, denom: &String) -> Result<Coin, ContractError> {
+    let valid_token = funds
+        .iter()
+        .find(|c| c.denom == *denom)
+        .ok_or_else(|| ContractError::InvalidDenom {})?;
 
-/// CwTemplateContract is a wrapper around Addr that provides a lot of helpers
-/// for working with this.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
-pub struct CwTemplateContract(pub Addr);
+    Ok(valid_token.clone())
+}
 
-impl CwTemplateContract {
-    pub fn addr(&self) -> Addr {
-        self.0.clone()
+pub fn check_valid_denom(denom_list: &Vec<String>, denom: &String) -> Result<(), ContractError> {
+    match denom_list.contains(denom) {
+        true => Ok(()),
+        false => Err(ContractError::InvalidDenom {}),
     }
+}
 
-    pub fn call<T: Into<ExecuteMsg>>(&self, msg: T) -> StdResult<CosmosMsg> {
-        let msg = to_binary(&msg.into())?;
-        Ok(WasmMsg::Execute {
-            contract_addr: self.addr().into(),
-            msg,
-            funds: vec![],
-        }
-        .into())
+pub fn check_core_contract(core: &Addr, sender: &Addr) -> Result<(), ContractError> {
+    match *core == *sender {
+        true => Ok(()),
+        false => Err(ContractError::Unauthorized {}),
+    }
+}
+
+pub fn check_owner(sender: &Addr, owner: &Addr) -> Result<(), ContractError> {
+    match *sender == *owner {
+        true => Ok(()),
+        false => Err(ContractError::Unauthorized {}),
     }
 }

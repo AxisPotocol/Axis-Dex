@@ -1,9 +1,9 @@
-use cosmwasm_std::{coin, Addr, Uint128};
-use cw_multi_test::Executor;
-use rune::{
+use axis_protocol::{
     market::{GetConfigResponse as MarketGetConfigResponse, QueryMsg as MarketQueryMsg},
     pool::{ConfigResponse, ExecuteMsg, PoolResponse, QueryMsg},
 };
+use cosmwasm_std::{coin, Addr, Uint128};
+use cw_multi_test::Executor;
 
 use sei_integration_tests::helper::mock_app;
 

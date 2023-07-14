@@ -1,32 +1,32 @@
 use cosmwasm_std::{Addr, Decimal, QuerierWrapper, Uint128};
 
-use rune::pool::{PositionBalance, QueryMsg as PoolQueryMsg};
+use axis_protocol::pool::{PositionBalance, QueryMsg as PoolQueryMsg};
 use sei_cosmwasm::{SeiQuerier, SeiQueryWrapper};
 
 use crate::{error::ContractError, position::Position};
 
-pub fn query_entry_and_stable_price<'a>(
+pub fn query_base_coin_price_and_price_coin_price<'a>(
     querier: &'a QuerierWrapper<SeiQueryWrapper>,
-    asset_denom: &String,
+    base_denom: &String,
     stable_denom: &String,
 ) -> Result<(Decimal, Decimal), ContractError> {
     let querier = SeiQuerier::new(querier);
     let exchange_rate_res = querier.query_exchange_rates()?;
-    let asset_price = exchange_rate_res
+    let base_coin_price = exchange_rate_res
         .denom_oracle_exchange_rate_pairs
         .iter()
-        .find(|d| d.denom == *asset_denom)
+        .find(|d| d.denom == *base_denom)
         .map(|d| d.oracle_exchange_rate.exchange_rate)
         .ok_or_else(|| ContractError::NotFoundExchangeRate {})?;
 
-    let stable_price = exchange_rate_res
+    let price_coin_price = exchange_rate_res
         .denom_oracle_exchange_rate_pairs
         .iter()
         .find(|d| d.denom == *stable_denom)
         .map(|d| d.oracle_exchange_rate.exchange_rate)
         .ok_or_else(|| ContractError::NotFoundExchangeRate {})?;
-    match asset_price.decimal_places() == 18 && stable_price.decimal_places() == 18 {
-        true => Ok((asset_price, stable_price)),
+    match base_coin_price.decimal_places() == 18 && price_coin_price.decimal_places() == 18 {
+        true => Ok((base_coin_price, price_coin_price)),
         false => Err(ContractError::DecimalError {}),
     }
 }

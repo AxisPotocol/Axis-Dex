@@ -1,6 +1,6 @@
 use cosmwasm_schema::write_api;
 
-use staking::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
+use axis_protocol::staking::{ExecuteMsg, InstantiateMsg, QueryMsg};
 
 fn main() {
     write_api! {

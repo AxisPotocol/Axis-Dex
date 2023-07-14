@@ -10,10 +10,11 @@ use sei_cosmwasm::{SeiMsg, SeiQueryWrapper};
 use crate::error::ContractError;
 
 use crate::helpers::find_attribute_value;
-use crate::state::{register_pair, register_treasury, Config, CONFIG};
-use axis::core::{ConfigResponse, ExecuteMsg, InstantiateMsg, QueryMsg};
-use axis::pool::{ExecuteMsg as PoolExecuteMsg, InstantiateMsg as PoolInstantiateMsg};
-use axis::treasury::InstantiateMsg as TreasuryInstantiateMsg;
+use crate::state::{register_axis_contract, register_pair_pool_contract, Config, CONFIG};
+use axis_protocol::axis::InstantiateMsg as AxisInstantiateMsg;
+use axis_protocol::core::{ConfigResponse, ExecuteMsg, InstantiateMsg, QueryMsg};
+use axis_protocol::pool::{ExecuteMsg as PoolExecuteMsg, InstantiateMsg as PoolInstantiateMsg};
+
 // version info for migration info
 const CONTRACT_NAME: &str = "crates.io:core";
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -28,26 +29,30 @@ pub fn instantiate(
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
     let config = Config {
         owner: info.sender.clone(),
-        accept_stable_denoms: msg.accept_stable_denoms,
-        treausry_contract_address: Addr::unchecked(""),
+        epoch: 0,
+        accept_price_denoms: msg.accept_price_denoms,
+        axis_contract: Addr::unchecked(""),
+        staking_contract: Addr::unchecked(""),
+        vault_contract: Addr::unchecked(""),
     };
     CONFIG.save(deps.storage, &config)?;
-    //@@treasury instantiate
-    let treasury_instantiate_msg = WasmMsg::Instantiate {
-        admin: Some(env.contract.address.to_string()),
-        code_id: msg.rune_treasury_code_id,
-        msg: to_binary(&TreasuryInstantiateMsg {
+    //@@axis instantiate
+    let axis_instantiate_msg = WasmMsg::Instantiate {
+        admin: Some(info.sender.to_string()),
+        code_id: msg.axis_code_id,
+        msg: to_binary(&AxisInstantiateMsg {
             core_contract: env.contract.address,
-            owner: info.sender.clone(),
+            owner: info.sender.to_owned(),
         })?,
         funds: vec![],
-        label: format!("RUNE TREASURY"),
+        label: format!("axis"),
     };
-    let treasury_instatiate_tx = SubMsg::reply_on_success(treasury_instantiate_msg, 1);
+
+    let axis_instatiate_tx = SubMsg::reply_on_success(axis_instantiate_msg, 1);
     Ok(Response::new()
         .add_attribute("method", "instantiate")
         .add_attribute("owner", info.sender)
-        .add_submessage(treasury_instatiate_tx))
+        .add_submessage(axis_instatiate_tx))
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -62,30 +67,54 @@ pub fn execute(
             pool_init_msg,
             pool_code_id,
         } => execute::create_pair(deps, info, pool_init_msg, pool_code_id),
-        ExecuteMsg::RegisterStableAsset { stable_denom } => {
-            execute::register_stable_denom(deps, info, stable_denom)
+        ExecuteMsg::RegisterPriceBase { price_denom } => {
+            execute::register_price_denom(deps, info, price_denom)
         }
         ExecuteMsg::AllPoolLock {} => execute::all_pool_lock(deps, info),
         ExecuteMsg::PairLock {
-            asset_denom,
-            stable_denom,
-        } => execute::pair_pool_lock(deps, info, asset_denom, stable_denom),
+            base_denom,
+            price_denom,
+        } => execute::pair_pool_lock(deps, info, base_denom, price_denom),
         ExecuteMsg::AllPoolUnLock {} => execute::all_pool_unlock(deps, info),
         ExecuteMsg::PairUnLock {
-            asset_denom,
-            stable_denom,
-        } => execute::pair_pool_un_lock(deps, info, asset_denom, stable_denom),
+            base_denom,
+            price_denom,
+        } => execute::pair_pool_un_lock(deps, info, base_denom, price_denom),
+        ExecuteMsg::Setting {} => execute::setting(deps, info),
+        ExecuteMsg::UpdateConfig {
+            vault_contract,
+            staking_contract,
+        } => execute::update_config(deps, info, vault_contract, staking_contract),
+        ExecuteMsg::RegisterPairLpStaking {
+            base_denom,
+            price_denom,
+            lp_contract,
+        } => execute::register_lp_contract(deps, info, base_denom, price_denom, lp_contract),
+        ExecuteMsg::RegisterPairMarket {
+            base_denom,
+            price_denom,
+            market_contract,
+        } => {
+            execute::register_market_contract(deps, info, base_denom, price_denom, market_contract)
+        }
     }
 }
 
 pub mod execute {
+    use axis_protocol::{
+        axis::ExecuteMsg as AxisExecuteMsg, staking::ExecuteMsg as StakingExecuteMsg,
+        vault::ExecuteMsg as VaultExecuteMsg,
+    };
     use cosmwasm_std::{CosmosMsg, Order, SubMsg, WasmMsg};
 
     use sei_cosmwasm::{SeiMsg, SeiQueryWrapper};
 
     use crate::{
-        helpers::{check_denom_and_get_validate_denom, check_owner, check_valid_stable},
-        state::{check_pair, load_config, load_pair, save_config, PAIR_POOL},
+        helpers::{check_denom_and_get_validate_denom, check_owner, check_valid_price},
+        state::{
+            check_pair, load_config, load_pair, save_config, PAIR_MARKET_CONTRACT, PAIR_POOL,
+            PAIR_POOL_LP_STAKING_CONTRACT,
+        },
     };
 
     use super::*;
@@ -96,26 +125,26 @@ pub mod execute {
         msg: PoolInstantiateMsg,
         pool_code_id: u64,
     ) -> Result<Response<SeiMsg>, ContractError> {
-        //stable denom 이 있는지 확인
+        //price denom 이 있는지 확인
         let config = load_config(deps.storage)?;
         // info.funds 로 확인해야함??
         check_owner(&info.sender, &config.owner)?;
-        //허용된 stable denom 인지 확인
+        //허용된 price denom 인지 확인
 
-        check_valid_stable(&config, &msg.stable_denom)?;
+        check_valid_price(&config, &msg.price_denom)?;
         //pair 이미 있는지 확인해야함.
-        check_pair(deps.storage, &msg.asset_denom, &msg.stable_denom)?;
-        //denom 에 맞는 asset 구하는 로직
-        let (asset_coin, stable_coin) =
-            check_denom_and_get_validate_denom(info.funds, &msg.asset_denom, &msg.stable_denom)?;
+        check_pair(deps.storage, &msg.base_denom, &msg.price_denom)?;
+        //denom 에 맞는 base 구하는 로직
+        let (base_coin, price_coin) =
+            check_denom_and_get_validate_denom(info.funds, &msg.base_denom, &msg.price_denom)?;
 
         //pool contract 배포
         let init_pool_msg = CosmosMsg::Wasm(WasmMsg::Instantiate {
             admin: Some(info.sender.to_string()),
             code_id: pool_code_id,
             msg: to_binary(&msg)?,
-            label: format!("{:?}:{:?}", asset_coin.denom, stable_coin.denom),
-            funds: vec![asset_coin, stable_coin],
+            label: format!("{:?}:{:?}", base_coin.denom, price_coin.denom),
+            funds: vec![base_coin, price_coin],
         });
         let init_pool_tx = SubMsg::reply_on_success(init_pool_msg, 2);
 
@@ -123,20 +152,20 @@ pub mod execute {
             .add_attribute("method", "create_pair")
             .add_submessage(init_pool_tx))
     }
-    pub fn register_stable_denom(
+    pub fn register_price_denom(
         deps: DepsMut<SeiQueryWrapper>,
         info: MessageInfo,
-        stable_denom: String,
+        price_denom: String,
     ) -> Result<Response<SeiMsg>, ContractError> {
         let mut config = load_config(deps.storage)?;
         //only owner
         check_owner(&info.sender, &config.owner)?;
         //이미 있는지 확인
-        match config.accept_stable_denoms.contains(&stable_denom) {
-            true => Err(ContractError::InvalidStable {}),
+        match config.accept_price_denoms.contains(&price_denom) {
+            true => Err(ContractError::InvalidPrice {}),
             false => Ok(()),
         }?;
-        config.accept_stable_denoms.push(stable_denom);
+        config.accept_price_denoms.push(price_denom);
         save_config(deps.storage, &config)?;
         Ok(Response::new())
     }
@@ -189,12 +218,12 @@ pub mod execute {
     pub fn pair_pool_lock(
         deps: DepsMut<SeiQueryWrapper>,
         info: MessageInfo,
-        asset_denom: String,
-        stable_denom: String,
+        base_denom: String,
+        price_denom: String,
     ) -> Result<Response<SeiMsg>, ContractError> {
         let config = load_config(deps.storage)?;
         check_owner(&info.sender, &config.owner)?;
-        let pair_addr = load_pair(deps.storage, &asset_denom, &stable_denom)?;
+        let pair_addr = load_pair(deps.storage, &base_denom, &price_denom)?;
         let pool_lock_msg = PoolExecuteMsg::Lock {};
         let pool_lock_tx = CosmosMsg::Wasm(WasmMsg::Execute {
             contract_addr: pair_addr.to_string(),
@@ -206,12 +235,12 @@ pub mod execute {
     pub fn pair_pool_un_lock(
         deps: DepsMut<SeiQueryWrapper>,
         info: MessageInfo,
-        asset_denom: String,
-        stable_denom: String,
+        base_denom: String,
+        price_denom: String,
     ) -> Result<Response<SeiMsg>, ContractError> {
         let config = load_config(deps.storage)?;
         check_owner(&info.sender, &config.owner)?;
-        let pair_addr = load_pair(deps.storage, &asset_denom, &stable_denom)?;
+        let pair_addr = load_pair(deps.storage, &base_denom, &price_denom)?;
         let pool_unlock_msg = PoolExecuteMsg::UnLock {};
         let pool_lock_tx = CosmosMsg::Wasm(WasmMsg::Execute {
             contract_addr: pair_addr.to_string(),
@@ -220,45 +249,188 @@ pub mod execute {
         });
         Ok(Response::new().add_message(pool_lock_tx))
     }
+    pub fn setting(
+        deps: DepsMut<SeiQueryWrapper>,
+        info: MessageInfo,
+    ) -> Result<Response<SeiMsg>, ContractError> {
+        //Axis token setting
+        //staking setting
+        //vault setting
+        //@@checking timestamp
+        let mut config = load_config(deps.storage)?;
+
+        let axis_setting_msg = CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr: config.axis_contract.to_string(),
+            msg: to_binary(&AxisExecuteMsg::Setting {})?,
+            funds: vec![],
+        });
+        let vault_setting_msg = CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr: config.vault_contract.to_string(),
+            msg: to_binary(&VaultExecuteMsg::Setting {})?,
+            funds: vec![],
+        });
+        let axis_staking_setting_msg = CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr: config.staking_contract.to_string(),
+            msg: to_binary(&StakingExecuteMsg::Setting {})?,
+            funds: vec![],
+        });
+        config.epoch += 1;
+        save_config(deps.storage, &config)?;
+        Ok(Response::new().add_messages(vec![
+            axis_setting_msg,
+            vault_setting_msg,
+            axis_staking_setting_msg,
+        ]))
+    }
+    pub fn update_config(
+        deps: DepsMut<SeiQueryWrapper>,
+        info: MessageInfo,
+        vault_contract: Option<String>,
+        staking_contract: Option<String>,
+    ) -> Result<Response<SeiMsg>, ContractError> {
+        let config = load_config(deps.storage)?;
+        check_owner(&info.sender, &config.owner)?;
+        let mut config = load_config(deps.storage)?;
+        if let Some(staking_contract) = staking_contract {
+            if config.staking_contract == Addr::unchecked("") {
+                config.staking_contract = deps.api.addr_validate(&staking_contract)?;
+            }
+        }
+        if let Some(vault_contract) = vault_contract {
+            if config.vault_contract == Addr::unchecked("") {
+                config.vault_contract = deps.api.addr_validate(&vault_contract)?;
+            }
+        }
+        Ok(Response::new())
+    }
+
+    pub fn register_lp_contract(
+        deps: DepsMut<SeiQueryWrapper>,
+        info: MessageInfo,
+        base_denom: String,
+        price_denom: String,
+        lp_contract: Addr,
+    ) -> Result<Response<SeiMsg>, ContractError> {
+        let pair_addr = load_pair(deps.storage, &base_denom, &price_denom)?;
+        match pair_addr == info.sender {
+            true => Ok(()),
+            false => Err(ContractError::Unauthorized {}),
+        }?;
+        PAIR_POOL_LP_STAKING_CONTRACT.save(
+            deps.storage,
+            (&base_denom, &price_denom),
+            &lp_contract,
+        )?;
+        Ok(Response::new())
+    }
+    pub fn register_market_contract(
+        deps: DepsMut<SeiQueryWrapper>,
+        info: MessageInfo,
+        base_denom: String,
+        price_denom: String,
+        lp_contract: Addr,
+    ) -> Result<Response<SeiMsg>, ContractError> {
+        let pair_addr = load_pair(deps.storage, &base_denom, &price_denom)?;
+        match pair_addr == info.sender {
+            true => Ok(()),
+            false => Err(ContractError::Unauthorized {}),
+        }?;
+        PAIR_MARKET_CONTRACT.save(deps.storage, (&base_denom, &price_denom), &lp_contract)?;
+        Ok(Response::new())
+    }
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn query(deps: Deps<SeiQueryWrapper>, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
-        QueryMsg::GetPairContract {
-            asset_denom,
-            stable_denom,
-        } => to_binary(&query::get_pair_contract(deps, asset_denom, stable_denom)?),
         QueryMsg::GetConfig {} => to_binary(&query::get_config(deps)?),
+        QueryMsg::GetPairPoolContract {
+            base_denom,
+            price_denom,
+        } => to_binary(&query::get_pair_pool_contract(
+            deps,
+            base_denom,
+            price_denom,
+        )?),
+        QueryMsg::GetPairLpStakingContract {
+            base_denom,
+            price_denom,
+        } => to_binary(&query::get_pair_lp_staking_contract(
+            deps,
+            base_denom,
+            price_denom,
+        )?),
+        QueryMsg::GetPairMarketContract {
+            base_denom,
+            price_denom,
+        } => to_binary(&query::get_pair_market_contract(
+            deps,
+            base_denom,
+            price_denom,
+        )?),
     }
 }
 
 pub mod query {
-    use axis::core::PairContractResponse;
+    use axis_protocol::core::{
+        PairLpStakingContractResponse, PairMarketContractResponse, PairPoolContractResponse,
+    };
 
-    use crate::state::{load_config, load_pair};
+    use crate::state::{
+        load_config, load_pair, PAIR_MARKET_CONTRACT, PAIR_POOL_LP_STAKING_CONTRACT,
+    };
 
     use super::*;
 
-    pub fn get_pair_contract(
+    pub fn get_pair_pool_contract(
         deps: Deps<SeiQueryWrapper>,
-        asset_denom: String,
-        stable_denom: String,
-    ) -> StdResult<PairContractResponse> {
-        let pool_contract = load_pair(deps.storage, &asset_denom, &stable_denom)?.to_string();
-        Ok(PairContractResponse {
-            asset_denom,
-            stable_denom,
+        base_denom: String,
+        price_denom: String,
+    ) -> StdResult<PairPoolContractResponse> {
+        let pool_contract = load_pair(deps.storage, &base_denom, &price_denom)?;
+
+        Ok(PairPoolContractResponse {
+            base_denom,
+            price_denom,
             pool_contract,
+        })
+    }
+    pub fn get_pair_market_contract(
+        deps: Deps<SeiQueryWrapper>,
+        base_denom: String,
+        price_denom: String,
+    ) -> StdResult<PairMarketContractResponse> {
+        let market_contract =
+            PAIR_MARKET_CONTRACT.load(deps.storage, (&base_denom, &price_denom))?;
+        Ok(PairMarketContractResponse {
+            base_denom,
+            price_denom,
+            market_contract,
+        })
+    }
+    pub fn get_pair_lp_staking_contract(
+        deps: Deps<SeiQueryWrapper>,
+        base_denom: String,
+        price_denom: String,
+    ) -> StdResult<PairLpStakingContractResponse> {
+        let lp_staking_contract =
+            PAIR_POOL_LP_STAKING_CONTRACT.load(deps.storage, (&base_denom, &price_denom))?;
+        Ok(PairLpStakingContractResponse {
+            base_denom,
+            price_denom,
+            lp_staking_contract,
         })
     }
 
     pub fn get_config(deps: Deps<SeiQueryWrapper>) -> StdResult<ConfigResponse> {
         let config = load_config(deps.storage)?;
         Ok(ConfigResponse {
-            accept_stable_denoms: config.accept_stable_denoms,
-            owner: config.owner.to_string(),
-            treausry_contract_address: config.treausry_contract_address.to_string(),
+            epoch: config.epoch,
+            accept_price_denoms: config.accept_price_denoms,
+            axis_contract: config.axis_contract,
+            owner: config.owner,
+            staking_contract: config.staking_contract,
+            vault_contract: config.vault_contract,
         })
     }
 }
@@ -272,29 +444,28 @@ pub fn reply(
         1 => match msg.result {
             SubMsgResult::Ok(res) => match res.data {
                 Some(_) => {
-                    let traesury_contract_addr =
+                    let axis_contract_addr =
                         find_attribute_value(&res.events[1].attributes, "contract_address")?;
-                    register_treasury(deps.storage, Addr::unchecked(traesury_contract_addr))?;
+                    register_axis_contract(deps.storage, Addr::unchecked(axis_contract_addr))?;
                     Ok(Response::new())
                 }
                 None => Err(ContractError::MissingPoolContractAddr {}),
             },
-            SubMsgResult::Err(_) => Err(ContractError::TreasuryContractInstantiationFailed {}),
+            SubMsgResult::Err(_) => Err(ContractError::AxisContractInstantiationFailed {}),
         },
         2 => match msg.result {
             SubMsgResult::Ok(res) => match res.data {
                 Some(_) => {
                     let pool_contract_addr =
                         find_attribute_value(&res.events[1].attributes, "contract_address")?;
-                    let asset_denom =
-                        find_attribute_value(&res.events[1].attributes, "asset_denom")?;
-                    let stable_denom =
-                        find_attribute_value(&res.events[1].attributes, "stable_denom")?;
+                    let base_denom = find_attribute_value(&res.events[1].attributes, "base_denom")?;
+                    let price_denom =
+                        find_attribute_value(&res.events[1].attributes, "price_denom")?;
 
-                    register_pair(
+                    register_pair_pool_contract(
                         deps.storage,
-                        asset_denom,
-                        stable_denom,
+                        &base_denom,
+                        &price_denom,
                         Addr::unchecked(pool_contract_addr),
                     )?;
                     Ok(Response::new())

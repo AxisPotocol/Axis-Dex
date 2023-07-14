@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
+use axis_protocol::pool::{ConfigResponse, QueryMsg};
 use cosmwasm_std::{coin, BankMsg, CosmosMsg, Decimal, Uint128, Uint64};
-use rune::pool::{ConfigResponse, QueryMsg};
 
 use sei_integration_tests::helper::mock_app;
 

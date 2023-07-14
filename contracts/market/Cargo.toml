@@ -40,10 +40,10 @@ optimize = """docker run --rm -v "$(pwd)":/code \
 """
 
 [dependencies]
-axis ={path="../../packages/axis",default-features=false }
+axis-protocol ={path="../../packages/axis_protocol",default-features=false }
 pool = {path="../pool",default-features=false }
 core ={path="../core",default-features=false}
-treasury={path="../treasury",default-features=false}
+axis={path="../axis",default-features=false}
 cosmwasm-schema = "1.1.3"
 cosmwasm-std = "1.1.3"
 cosmwasm-storage = "1.1.3"

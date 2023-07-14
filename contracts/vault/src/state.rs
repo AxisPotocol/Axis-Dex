@@ -1,14 +1,41 @@
 use cosmwasm_schema::cw_serde;
-use cosmwasm_std::Uint128;
+use cosmwasm_std::{Addr, StdResult, Storage, Uint128};
 use cw_storage_plus::{Item, Map};
 
 #[cw_serde]
 pub struct Config {
-    es_axis_denom: String,
-    es_axis_total_supply: Uint128,
+    pub owner: Addr,
+    pub core_contract: Addr,
+    pub es_axis_contract: Addr,
+    pub es_axis_denom: String,
+    pub denom_list: Vec<String>,
+}
+
+pub fn save_config(storage: &mut dyn Storage, config: &Config) -> StdResult<()> {
+    CONFIG.save(storage, config)
+}
+pub fn load_config(storage: &dyn Storage) -> StdResult<Config> {
+    CONFIG.load(storage)
 }
 
 //denom balance
-pub const BALANCE: Map<&str, Uint128> = Map::new("Vault Balance");
+pub const BALANCE: Map<&str, Uint128> = Map::new("vault_balance");
 
-pub const CONFIG: Item<Config> = Item::new("Valut Config");
+pub fn save_balance(storage: &mut dyn Storage, denom: &String, balance: &Uint128) -> StdResult<()> {
+    BALANCE.save(storage, denom, balance)
+}
+pub fn load_balance(storage: &dyn Storage, denom: &String) -> StdResult<Uint128> {
+    BALANCE.load(storage, denom)
+}
+pub const PENDING_BALANCE: Map<&str, Uint128> = Map::new("pending_balance");
+pub fn save_pending_balance(
+    storage: &mut dyn Storage,
+    denom: &String,
+    balance: &Uint128,
+) -> StdResult<()> {
+    PENDING_BALANCE.save(storage, denom, balance)
+}
+pub fn load_pending_balance(storage: &dyn Storage, denom: &String) -> StdResult<Uint128> {
+    PENDING_BALANCE.load(storage, denom)
+}
+pub const CONFIG: Item<Config> = Item::new("valut_config");

@@ -1,0 +1,35 @@
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+
+use cosmwasm_std::{
+    to_binary, Addr, CosmosMsg, CustomQuery, Querier, QuerierWrapper, StdResult, WasmMsg, WasmQuery,
+};
+
+use crate::error::ContractError;
+
+pub fn check_market_contract(market_contract: &Addr, sender: &Addr) -> Result<(), ContractError> {
+    match *market_contract == *sender {
+        true => Ok(()),
+        false => Err(ContractError::Unauthorized {}),
+    }
+}
+
+pub fn check_core_contract(core_contract: &Addr, sender: &Addr) -> Result<(), ContractError> {
+    match *core_contract == *sender {
+        true => Ok(()),
+        false => Err(ContractError::Unauthorized {}),
+    }
+}
+pub fn check_pool_contract(pool_contract: &Addr, sender: &Addr) -> Result<(), ContractError> {
+    match *pool_contract == *sender {
+        true => Ok(()),
+        false => Err(ContractError::Unauthorized {}),
+    }
+}
+
+pub fn check_lp_contract(lp_contract: &Addr, sender: &Addr) -> Result<(), ContractError> {
+    match *lp_contract == *sender {
+        true => Ok(()),
+        false => Err(ContractError::Unauthorized {}),
+    }
+}

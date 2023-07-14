@@ -8,27 +8,29 @@ pub fn check_owner(sender: &Addr, owner: &Addr) -> Result<(), ContractError> {
         false => Err(ContractError::Unauthorized {}),
     }
 }
-pub fn check_valid_stable(config: &Config, stable_denom: &String) -> Result<(), ContractError> {
-    match config.accept_stable_denoms.contains(stable_denom) {
+
+pub fn check_valid_price(config: &Config, price_denom: &String) -> Result<(), ContractError> {
+    match config.accept_price_denoms.contains(price_denom) {
         true => Ok(()),
-        false => Err(ContractError::InvalidStable {}),
+        false => Err(ContractError::InvalidPrice {}),
     }?;
     Ok(())
 }
+
 pub fn check_denom_and_get_validate_denom(
     funds: Vec<Coin>,
     asset_denom: &String,
-    stable_denom: &String,
+    price_denom: &String,
 ) -> Result<(Coin, Coin), ContractError> {
     let asset_coin = funds
         .iter()
         .find(|c| c.denom == *asset_denom)
         .ok_or_else(|| ContractError::InvalidDenom {})?;
-    let stable_coin = funds
+    let price_coin = funds
         .iter()
-        .find(|c| c.denom == *stable_denom)
+        .find(|c| c.denom == *price_denom)
         .ok_or_else(|| ContractError::InvalidDenom {})?;
-    Ok((asset_coin.clone(), stable_coin.clone()))
+    Ok((asset_coin.clone(), price_coin.clone()))
 }
 
 pub fn find_attribute_value(

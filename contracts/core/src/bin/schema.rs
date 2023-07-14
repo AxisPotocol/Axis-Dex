@@ -1,6 +1,6 @@
 use cosmwasm_schema::write_api;
 
-use rune::core::{ExecuteMsg, InstantiateMsg, QueryMsg};
+use axis_protocol::core::{ExecuteMsg, InstantiateMsg, QueryMsg};
 
 fn main() {
     write_api! {

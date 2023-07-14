@@ -1,5 +1,5 @@
+use axis_protocol::market::{ExecuteMsg, InstantiateMsg, QueryMsg};
 use cosmwasm_schema::write_api;
-use rune::market::{ExecuteMsg, InstantiateMsg, QueryMsg};
 
 fn main() {
     write_api! {
