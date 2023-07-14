@@ -50,16 +50,29 @@ pub fn execute(
     msg: ExecuteMsg,
 ) -> Result<Response<SeiMsg>, ContractError> {
     match msg {
-        ExecuteMsg::RecievedFee { denom, amount } => {
-            execute::recieved_fee(deps, info, denom, amount)
-        }
+        ExecuteMsg::RecievedFee {
+            base_denom,
+            base_amount,
+            price_denom,
+            price_amount,
+        } => execute::recieved_fee(
+            deps,
+            info,
+            base_denom,
+            base_amount,
+            price_denom,
+            price_amount,
+        ),
         ExecuteMsg::Swap {} => execute::swap(deps, info),
         ExecuteMsg::Setting {} => execute::setting(deps, info),
     }
 }
 pub mod execute {
     use crate::{
-        helpers::{check_core_contract, check_funds_and_get_token, check_owner, check_valid_denom},
+        helpers::{
+            check_core_contract, check_denom_and_amount, check_funds_and_get_token, check_owner,
+            check_valid_denom,
+        },
         query::query_ex_axis_total_supply,
         state::{
             load_balance, load_config, load_pending_balance, save_balance, save_config, BALANCE,
@@ -77,19 +90,38 @@ pub mod execute {
     pub fn recieved_fee(
         deps: DepsMut<SeiQueryWrapper>,
         info: MessageInfo,
-        denom: String,
-        amount: Uint128,
+        base_denom: String,
+        base_amount: Uint128,
+        price_denom: String,
+        price_amount: Uint128,
     ) -> Result<Response<SeiMsg>, ContractError> {
         let config = load_config(deps.storage)?;
-        check_valid_denom(&config.denom_list, &denom)?;
-        check_funds_and_get_token(info.funds, &denom)?;
+        check_valid_denom(&config.denom_list, &base_denom, &price_denom)?;
+        check_denom_and_amount(
+            info.funds,
+            &base_denom,
+            base_amount,
+            &price_denom,
+            price_amount,
+        )?;
 
-        PENDING_BALANCE.update(deps.storage, &denom, |exsists| -> StdResult<Uint128> {
+        PENDING_BALANCE.update(deps.storage, &base_denom, |exsists| -> StdResult<Uint128> {
             match exsists {
-                Some(denom_amount) => Ok(denom_amount + amount),
-                None => Ok(amount),
+                Some(denom_amount) => Ok(denom_amount + base_amount),
+                None => Ok(base_amount),
             }
         })?;
+
+        PENDING_BALANCE.update(
+            deps.storage,
+            &price_denom,
+            |exsists| -> StdResult<Uint128> {
+                match exsists {
+                    Some(denom_amount) => Ok(denom_amount + price_amount),
+                    None => Ok(price_amount),
+                }
+            },
+        )?;
         Ok(Response::new())
     }
     pub fn swap(
