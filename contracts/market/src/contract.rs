@@ -116,7 +116,7 @@ pub mod execute {
         },
         position::Position,
         query::{query_base_coin_price_and_price_coin_price, query_pool_balance},
-        state::{load_config, load_state, update_past_price},
+        state::{load_config, load_state},
         trade::{get_desitinated_price_traders, trade_load, trade_remove, trade_update, Trade},
     };
     use cosmwasm_std::{coin, BankMsg, CosmosMsg, Uint128, WasmMsg};
@@ -142,13 +142,14 @@ pub mod execute {
         let config = load_config(deps.storage)?;
         let mut state = load_state(deps.storage)?;
         let position = Position::new(position);
+
         check_leverage_rate(leverage, config.max_leverage)?;
         //fund 확인
         let (collateral_denom, collateral_amount) =
             check_funds_for_positions_get_funds(info.funds, &config, &position)?;
 
         //@@ entry price 가격 받아오기 난중에 Hook 로 빼자. config 로 뺄것.
-        let (entry_price, price_price) = query_base_coin_price_and_price_coin_price(
+        let (base_denom_price, price_denom_price) = query_base_coin_price_and_price_coin_price(
             &deps.querier,
             &config.base_denom,
             &config.price_denom,
@@ -177,15 +178,15 @@ pub mod execute {
             Position::Short => state.price_coin_total_fee += open_fee_amount,
         }
         save_state(deps.storage, &state)?;
+        println!("collateral_amount = {:?}", collateral_amount);
         let collateral_amount = collateral_amount - open_fee_amount;
-
         //@@ 이 로직 확인!
-
+        println!("collateral_amount = {:?}", collateral_amount);
         let (position_size, leverage_amount, liquidation_price) = {
             match position {
                 Position::Long => get_trade_information(
-                    entry_price,
-                    entry_price,
+                    base_denom_price,
+                    base_denom_price,
                     collateral_amount,
                     config.base_decimal,
                     open_fee_amount,
@@ -193,8 +194,8 @@ pub mod execute {
                     &position,
                 )?,
                 Position::Short => get_trade_information(
-                    entry_price,
-                    price_price,
+                    base_denom_price,
+                    price_denom_price,
                     collateral_amount,
                     config.price_decimal,
                     open_fee_amount,
@@ -208,12 +209,13 @@ pub mod execute {
 
         //@@ 풀의 몇% 까지? 정해지면 로직넣어야함.
         //@@ pool 에서도 로직 있음.
+
         check_leverage_amount(pool_balance, leverage_amount)?;
 
         //info 만들기
         let trade = Trade::new(
             info.sender.to_owned(),
-            entry_price.atomics(),
+            base_denom_price.atomics(),
             liquidation_price,
             limit_profit_price,
             limit_loss_price,
@@ -241,8 +243,12 @@ pub mod execute {
             },
         };
         let fee_usd = match position {
-            Position::Long => get_usd_amount(open_fee_amount, config.base_decimal, entry_price)?,
-            Position::Short => get_usd_amount(open_fee_amount, config.price_decimal, price_price)?,
+            Position::Long => {
+                get_usd_amount(open_fee_amount, config.base_decimal, base_denom_price)?
+            }
+            Position::Short => {
+                get_usd_amount(open_fee_amount, config.price_decimal, price_denom_price)?
+            }
         };
 
         //@@ attribute 만들어야함.
@@ -285,13 +291,13 @@ pub mod execute {
             ..
         } = trade;
 
-        let (now_price_dec, price_price_dec) = query_base_coin_price_and_price_coin_price(
+        let (now_base_price_dec, price_price_dec) = query_base_coin_price_and_price_coin_price(
             &deps.querier,
             &config.base_denom,
             &config.price_denom,
         )?;
 
-        let now_price = now_price_dec.atomics();
+        let now_price = now_base_price_dec.atomics();
 
         let winning_position = {
             if now_price >= entry_price {
@@ -309,7 +315,7 @@ pub mod execute {
                 now_price,
                 collateral_amount,
                 config.base_decimal,
-                now_price_dec,
+                now_base_price_dec,
                 leverage,
             ),
             Position::Short => get_trader_amount(
@@ -327,7 +333,9 @@ pub mod execute {
         let close_fee_amount =
             calculate_close_fee_amount(trader_amount, config.open_close_fee_rate);
         let fee_usd = match user_position {
-            Position::Long => get_usd_amount(close_fee_amount, config.base_decimal, now_price_dec)?,
+            Position::Long => {
+                get_usd_amount(close_fee_amount, config.base_decimal, now_base_price_dec)?
+            }
             Position::Short => {
                 get_usd_amount(close_fee_amount, config.price_decimal, price_price_dec)?
             }
@@ -346,7 +354,7 @@ pub mod execute {
         trade_remove(deps.storage, trader.to_owned())?;
 
         //@@treasury msg 만들기
-        let treasury_msg = CosmosMsg::Wasm(WasmMsg::Execute {
+        let axis_treasury_msg = CosmosMsg::Wasm(WasmMsg::Execute {
             contract_addr: config.axis_contract.to_string(),
             msg: to_binary(&AxisExecuteMsg::AddFeeAmount {
                 base_denom: config.base_denom,
@@ -357,13 +365,12 @@ pub mod execute {
             funds: vec![],
         });
 
-        //@@bank msg 만들기
         let user_bank_msg = CosmosMsg::Bank(BankMsg::Send {
             to_address: trader.to_string(),
             amount: vec![coin(trader_amount.into(), denom.to_owned())],
         });
-        //@@Execute Msg 만들기
-        let execute_msg = CosmosMsg::Wasm(WasmMsg::Execute {
+
+        let pool_repay_msg = CosmosMsg::Wasm(WasmMsg::Execute {
             contract_addr: config.pool_contract.to_string(),
             msg: to_binary(&PoolExecuteMsg::RePay {
                 denom: denom.to_owned(),
@@ -376,8 +383,8 @@ pub mod execute {
 
         Ok(Response::new()
             .add_message(user_bank_msg)
-            .add_message(execute_msg)
-            .add_message(treasury_msg))
+            .add_message(pool_repay_msg)
+            .add_message(axis_treasury_msg))
     }
 
     pub fn hook_liquidated(
@@ -394,8 +401,8 @@ pub mod execute {
             &config.base_denom,
             &config.price_denom,
         )?;
-        update_past_price(&mut state, past_price);
 
+        state.past_price = past_price;
         let price_destinated_trader = get_desitinated_price_traders(
             deps.storage,
             past_price.atomics(),
@@ -406,34 +413,13 @@ pub mod execute {
         let mut price_coin_to_pool = coin(0, config.price_denom.to_owned());
         let mut base_borrowed_amount = Uint128::zero();
         let mut price_borrowed_amount = Uint128::zero();
-        let loss_bank_msgs = control_desitinated_traders(
+        let mut bank_msgs: Vec<CosmosMsg<SeiMsg>> = vec![];
+        //liquidated
+        control_desitinated_traders(
             deps.storage,
             &mut config,
             &mut state,
-            current_price,
-            price_price,
-            price_destinated_trader.limit_loss,
-            &mut base_coin_to_pool,
-            &mut price_coin_to_pool,
-            &mut base_borrowed_amount,
-            &mut price_borrowed_amount,
-        )?;
-        let profit_bank_msgs = control_desitinated_traders(
-            deps.storage,
-            &mut config,
-            &mut state,
-            current_price,
-            price_price,
-            price_destinated_trader.limit_profit,
-            &mut base_coin_to_pool,
-            &mut price_coin_to_pool,
-            &mut base_borrowed_amount,
-            &mut price_borrowed_amount,
-        )?;
-        let liquidated_msgs = control_desitinated_traders(
-            deps.storage,
-            &mut config,
-            &mut state,
+            &mut bank_msgs,
             current_price,
             price_price,
             price_destinated_trader.liquidated,
@@ -442,10 +428,35 @@ pub mod execute {
             &mut base_borrowed_amount,
             &mut price_borrowed_amount,
         )?;
-        let mut bank_msgs = vec![];
-        bank_msgs.extend(loss_bank_msgs);
-        bank_msgs.extend(profit_bank_msgs);
-        bank_msgs.extend(liquidated_msgs);
+        //limit_loss
+        control_desitinated_traders(
+            deps.storage,
+            &mut config,
+            &mut state,
+            &mut bank_msgs,
+            current_price,
+            price_price,
+            price_destinated_trader.limit_loss,
+            &mut base_coin_to_pool,
+            &mut price_coin_to_pool,
+            &mut base_borrowed_amount,
+            &mut price_borrowed_amount,
+        )?;
+        //limit_profit
+        control_desitinated_traders(
+            deps.storage,
+            &mut config,
+            &mut state,
+            &mut bank_msgs,
+            current_price,
+            price_price,
+            price_destinated_trader.limit_profit,
+            &mut base_coin_to_pool,
+            &mut price_coin_to_pool,
+            &mut base_borrowed_amount,
+            &mut price_borrowed_amount,
+        )?;
+
         //@@ fee_zero_reset is used fee division
         let (
             send_base_fee_to_pool,
@@ -454,45 +465,57 @@ pub mod execute {
             send_price_fee_to_valut,
         ) = fee_division(&mut state);
         save_state(deps.storage, &state)?;
-        let repay_price_msg: CosmosMsg<SeiMsg> = CosmosMsg::Wasm(WasmMsg::Execute {
-            contract_addr: config.pool_contract.to_string(),
-            msg: to_binary(&PoolExecuteMsg::RePay {
-                denom: config.price_denom.to_owned(),
-                position: false,
-                amount: price_coin_to_pool.amount + send_price_fee_to_pool,
-                borrowed_amount: price_borrowed_amount,
-            })?,
-            funds: vec![price_coin_to_pool],
-        });
-        let repay_base_msg: CosmosMsg<SeiMsg> = CosmosMsg::Wasm(WasmMsg::Execute {
-            contract_addr: config.pool_contract.to_string(),
-            msg: to_binary(&PoolExecuteMsg::RePay {
-                denom: config.base_denom.to_owned(),
-                position: true,
-                amount: base_coin_to_pool.amount + send_base_fee_to_pool,
-                borrowed_amount: base_borrowed_amount,
-            })?,
-            funds: vec![base_coin_to_pool],
-        });
-        let send_fee_to_valut_msg: CosmosMsg<SeiMsg> = CosmosMsg::Wasm(WasmMsg::Execute {
-            contract_addr: config.vault_contract.to_string(),
-            msg: to_binary(&VaultExecuteMsg::RecievedFee {
-                base_denom: config.base_denom.to_owned(),
-                base_amount: send_base_fee_to_valut,
-                price_denom: config.price_denom.to_owned(),
-                price_amount: send_price_fee_to_valut,
-            })?,
-            funds: vec![
-                coin(send_base_fee_to_valut.into(), config.base_denom),
-                coin(send_price_fee_to_valut.into(), config.price_denom),
-            ],
-        });
 
-        Ok(Response::new().add_messages(bank_msgs).add_messages(vec![
-            repay_base_msg,
-            repay_price_msg,
-            send_fee_to_valut_msg,
-        ]))
+        let mut wasm_messages: Vec<CosmosMsg<SeiMsg>> = Vec::new();
+
+        if !send_price_fee_to_pool.is_zero() {
+            let repay_price_msg: CosmosMsg<SeiMsg> = CosmosMsg::Wasm(WasmMsg::Execute {
+                contract_addr: config.pool_contract.to_string(),
+                msg: to_binary(&PoolExecuteMsg::RePay {
+                    denom: config.price_denom.to_owned(),
+                    position: false,
+                    amount: price_coin_to_pool.amount + send_price_fee_to_pool,
+                    borrowed_amount: price_borrowed_amount,
+                })?,
+                funds: vec![price_coin_to_pool],
+            });
+            wasm_messages.push(repay_price_msg);
+        }
+
+        if !send_base_fee_to_pool.is_zero() {
+            let repay_base_msg: CosmosMsg<SeiMsg> = CosmosMsg::Wasm(WasmMsg::Execute {
+                contract_addr: config.pool_contract.to_string(),
+                msg: to_binary(&PoolExecuteMsg::RePay {
+                    denom: config.base_denom.to_owned(),
+                    position: true,
+                    amount: base_coin_to_pool.amount + send_base_fee_to_pool,
+                    borrowed_amount: base_borrowed_amount,
+                })?,
+                funds: vec![base_coin_to_pool],
+            });
+            wasm_messages.push(repay_base_msg);
+        }
+
+        if !send_base_fee_to_valut.is_zero() && !send_price_fee_to_valut.is_zero() {
+            let send_fee_to_valut_msg: CosmosMsg<SeiMsg> = CosmosMsg::Wasm(WasmMsg::Execute {
+                contract_addr: config.vault_contract.to_string(),
+                msg: to_binary(&VaultExecuteMsg::RecievedFee {
+                    base_denom: config.base_denom.to_owned(),
+                    base_amount: send_base_fee_to_valut,
+                    price_denom: config.price_denom.to_owned(),
+                    price_amount: send_price_fee_to_valut,
+                })?,
+                funds: vec![
+                    coin(send_base_fee_to_valut.into(), config.base_denom),
+                    coin(send_price_fee_to_valut.into(), config.price_denom),
+                ],
+            });
+            wasm_messages.push(send_fee_to_valut_msg);
+        }
+
+        Ok(Response::new()
+            .add_messages(bank_msgs)
+            .add_messages(wasm_messages))
     }
 }
 

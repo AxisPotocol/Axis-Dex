@@ -52,22 +52,6 @@ pub fn load_state(storage: &dyn Storage) -> StdResult<State> {
     STATE.load(storage)
 }
 
-pub fn state_send_fee(state: &mut State) -> (Uint128, Uint128) {
-    let base_coin_total_fee = state.base_coin_total_fee;
-    let price_coin_total_fee = state.price_coin_total_fee;
-    state.base_coin_total_fee = Uint128::zero();
-    state.price_coin_total_fee = Uint128::zero();
-
-    (base_coin_total_fee, price_coin_total_fee)
-}
-pub fn state_fee_zero_reset(state: &mut State) {
-    state.base_coin_total_fee = Uint128::zero();
-    state.price_coin_total_fee = Uint128::zero();
-}
-
-pub fn update_past_price(state: &mut State, past_price: Decimal) {
-    state.past_price = past_price;
-}
 //@@Fee_Config
 
 pub const CONFIG: Item<Config> = Item::new("config");

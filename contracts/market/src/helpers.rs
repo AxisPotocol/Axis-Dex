@@ -5,7 +5,7 @@ use crate::{
     error::ContractError,
     helpers::check::check_collateral_value,
     position::Position,
-    state::{state_fee_zero_reset, Config, State},
+    state::{Config, State},
     trade::{trade_remove, PriceDestinatedStatus, Trade},
 };
 const MINIMUM_USD_VALUE: u8 = 10;
@@ -60,18 +60,21 @@ pub fn get_liquidation_price(
 ) -> Result<Decimal, ContractError> {
     let collateral_usd =
         get_collateral_usd(collateral_amount, collateral_decimal, collateral_price)?;
+
     //@@CollateralUSD is always greater than 10usd. Check if it is greater than 10 in the main function.
+
     check_collateral_value(collateral_usd, MINIMUM_USD_VALUE)?;
 
-    let fee_dec = Decimal::from_atomics(open_fee_amount, collateral_decimal.into())
-        .map_err(|_| ContractError::ConvertError {})?;
+    let fee_usd = get_usd_amount(open_fee_amount, collateral_decimal, collateral_price)?;
+    println!("open_fee_amount = {:?}", open_fee_amount);
+
     let leverage_dec =
         Decimal::from_atomics(leverage, 0).map_err(|_| ContractError::ConvertError {})?;
 
     //roll over_FEE
-    // Open Price * (Collateral * 0.9 +fee) / Collateral / Leverage.
+    //@@Open Price * (Collateral usd * 0.9 +fee) / Collateral usd / Leverage.
 
-    let liquidation_destination = entry_price * (collateral_usd * Decimal::percent(90) + fee_dec)
+    let liquidation_destination = entry_price * (collateral_usd * Decimal::percent(90) + fee_usd)
         / collateral_usd
         / leverage_dec;
 
@@ -109,90 +112,135 @@ pub fn get_trader_amount(
     let current_price = Decimal::from_atomics(current_price, PRICE_DECIMAL).unwrap();
 
     let past_leverage = entry_price * leverage;
-
     let current_leverage = current_price * leverage;
 
-    let trader_amount = match winning_position == trader_position {
-        true => get_trader_profit_amount(
-            past_leverage,
-            current_leverage,
-            collateral_amount,
-            collateral_decimal,
-            collateral_price,
-            trader_position,
-        )?,
-        false => get_trader_loss_amount(
-            past_leverage,
-            current_leverage,
-            collateral_amount,
-            collateral_decimal,
-            collateral_price,
-            trader_position,
-        )?,
+    let (profit_position, loss_position) = match winning_position == trader_position {
+        true => (trader_position, winning_position),
+        false => (winning_position, trader_position),
     };
-    Ok(trader_amount)
-}
 
-pub fn get_trader_loss_amount(
-    past_leverage: Decimal,
-    current_leverage: Decimal,
-    collateral_amount: Uint128,
-    collateral_decimal: u8,
-    collateral_price: Decimal,
-    trader_position: &Position,
-) -> Result<Uint128, ContractError> {
-    let loss_usd = match trader_position {
+    let profit_usd = match profit_position {
+        Position::Long => current_leverage - past_leverage,
+        Position::Short => past_leverage - current_leverage,
+    };
+
+    let loss_usd = match loss_position {
         Position::Long => past_leverage - current_leverage,
         Position::Short => current_leverage - past_leverage,
     };
 
     let one_coin_amount = Uint128::new(10u128.pow(collateral_decimal.into()));
+
+    let profit_amount = (profit_usd / collateral_price) * one_coin_amount;
     let loss_amount = (loss_usd / collateral_price) * one_coin_amount;
 
-    let trader_amount = collateral_amount
-        .checked_sub(loss_amount)
-        .unwrap_or(Uint128::new(0));
-
-    Ok(trader_amount)
-}
-
-pub fn get_trader_profit_amount(
-    past_leverage: Decimal,
-    current_leverage: Decimal,
-    collateral_amount: Uint128,
-    collateral_decimal: u8,
-    collateral_price: Decimal,
-    trader_position: &Position,
-) -> Result<Uint128, ContractError> {
-    let profit_usd = match trader_position {
-        Position::Long => current_leverage - past_leverage,
-        Position::Short => past_leverage - current_leverage,
+    let trader_amount = match winning_position {
+        Position::Long => collateral_amount + profit_amount,
+        Position::Short => collateral_amount
+            .checked_sub(loss_amount)
+            .unwrap_or(Uint128::zero()),
     };
 
-    let one_coin_amount = Uint128::new(10u128.pow(collateral_decimal.into()));
-
-    let profit_amount = (profit_usd / collateral_price) * one_coin_amount; //5 /
-
-    let trader_amount = collateral_amount + profit_amount;
-
     Ok(trader_amount)
 }
+// pub fn get_trader_amount(
+//     trader_position: &Position,
+//     winning_position: &Position,
+//     entry_price: Uint128,
+//     current_price: Uint128,
+//     collateral_amount: Uint128,
+//     collateral_decimal: u8,
+//     collateral_price: Decimal,
+//     leverage: u8,
+// ) -> Result<Uint128, ContractError> {
+//     let entry_price = Decimal::from_atomics(entry_price, PRICE_DECIMAL).unwrap();
+//     let leverage = Decimal::from_atomics(leverage, LEVERAGE_DECIAML).unwrap();
+//     let current_price = Decimal::from_atomics(current_price, PRICE_DECIMAL).unwrap();
+
+//     let past_leverage = entry_price * leverage;
+
+//     let current_leverage = current_price * leverage;
+
+//     let trader_amount = match winning_position == trader_position {
+//         true => get_trader_profit_amount(
+//             past_leverage,
+//             current_leverage,
+//             collateral_amount,
+//             collateral_decimal,
+//             collateral_price,
+//             trader_position,
+//         )?,
+//         false => get_trader_loss_amount(
+//             past_leverage,
+//             current_leverage,
+//             collateral_amount,
+//             collateral_decimal,
+//             collateral_price,
+//             trader_position,
+//         )?,
+//     };
+//     Ok(trader_amount)
+// }
+
+// pub fn get_trader_loss_amount(
+//     past_leverage: Decimal,
+//     current_leverage: Decimal,
+//     collateral_amount: Uint128,
+//     collateral_decimal: u8,
+//     collateral_price: Decimal,
+//     trader_position: &Position,
+// ) -> Result<Uint128, ContractError> {
+//     let loss_usd = match trader_position {
+//         Position::Long => past_leverage - current_leverage,
+//         Position::Short => current_leverage - past_leverage,
+//     };
+
+//     let one_coin_amount = Uint128::new(10u128.pow(collateral_decimal.into()));
+//     let loss_amount = (loss_usd / collateral_price) * one_coin_amount;
+
+//     let trader_amount = collateral_amount
+//         .checked_sub(loss_amount)
+//         .unwrap_or(Uint128::new(0));
+
+//     Ok(trader_amount)
+// }
+
+// pub fn get_trader_profit_amount(
+//     past_leverage: Decimal,
+//     current_leverage: Decimal,
+//     collateral_amount: Uint128,
+//     collateral_decimal: u8,
+//     collateral_price: Decimal,
+//     trader_position: &Position,
+// ) -> Result<Uint128, ContractError> {
+//     let profit_usd = match trader_position {
+//         Position::Long => current_leverage - past_leverage,
+//         Position::Short => past_leverage - current_leverage,
+//     };
+
+//     let one_coin_amount = Uint128::new(10u128.pow(collateral_decimal.into()));
+
+//     let profit_amount = (profit_usd / collateral_price) * one_coin_amount; //5 /
+
+//     let trader_amount = collateral_amount + profit_amount;
+
+//     Ok(trader_amount)
+// }
 
 //@@ This function is return bank_msgs and leveraged amount
 pub fn control_desitinated_traders(
     storage: &mut dyn Storage,
-    config: &mut Config,
+    config: &Config,
     state: &mut State,
+    bank_msgs: &mut Vec<CosmosMsg<SeiMsg>>,
     base_price: Decimal,
     stable_price: Decimal,
     trader_status: PriceDestinatedStatus,
     base_coin_to_pool: &mut Coin,
     stable_coin_to_pool: &mut Coin,
-
     base_leveraged_amount: &mut Uint128,
     stable_leveraged_amount: &mut Uint128,
-) -> Result<Vec<CosmosMsg<SeiMsg>>, ContractError> {
-    let mut bank_msgs: Vec<CosmosMsg<SeiMsg>> = vec![];
+) -> Result<(), ContractError> {
     //@@ This variables for recording open interest in a pool contract
 
     match trader_status {
@@ -236,6 +284,7 @@ pub fn control_desitinated_traders(
                         leverage,
                     )?,
                 };
+
                 let close_fee_amount =
                     calculate_close_fee_amount(trader_amount, config.open_close_fee_rate);
                 trader_amount -= close_fee_amount;
@@ -353,20 +402,22 @@ pub fn control_desitinated_traders(
             }
         }
     }
-    Ok(bank_msgs)
+    Ok(())
 }
 
 pub fn fee_division(state: &mut State) -> (Uint128, Uint128, Uint128, Uint128) {
-    let send_base_fee_to_pool = calculate_percentage(state.base_coin_total_fee, 70);
-    let send_stable_fee_to_pool = calculate_percentage(state.price_coin_total_fee, 70);
-    let send_base_fee_to_valut = calculate_percentage(state.base_coin_total_fee, 30);
-    let send_stable_fee_to_valut = calculate_percentage(state.price_coin_total_fee, 30);
-    state_fee_zero_reset(state);
+    let send_base_fee_to_pool = state.base_coin_total_fee * Decimal::percent(90);
+    let send_price_fee_to_pool = state.price_coin_total_fee * Decimal::percent(90);
+    let send_base_fee_to_valut = state.base_coin_total_fee * Decimal::percent(10);
+    let send_price_fee_to_valut = state.price_coin_total_fee * Decimal::percent(10);
+
+    state.base_coin_total_fee = Uint128::zero();
+    state.price_coin_total_fee = Uint128::zero();
     (
         send_base_fee_to_pool,
-        send_stable_fee_to_pool,
+        send_price_fee_to_pool,
         send_base_fee_to_valut,
-        send_stable_fee_to_valut,
+        send_price_fee_to_valut,
     )
 }
 
@@ -380,7 +431,9 @@ pub fn get_trade_information(
     position: &Position,
 ) -> Result<(Uint128, Uint128, Uint128), ContractError> {
     let position_size = calculate_position_size(collateral_amount, leverage);
+
     let leverage_amount = get_leverage_amount(collateral_amount, leverage)?;
+
     let liquidation_price = get_liquidation_price(
         entry_price,
         collateral_price,
@@ -391,6 +444,7 @@ pub fn get_trade_information(
         position,
     )?
     .atomics();
+
     Ok((position_size, leverage_amount, liquidation_price))
 }
 

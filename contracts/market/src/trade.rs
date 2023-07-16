@@ -4,24 +4,6 @@ use cw_storage_plus::{Index, IndexList, IndexedMap, MultiIndex, PrefixBound};
 
 use crate::{error::ContractError, position::Position};
 
-pub enum IndexType {
-    Loss,
-    Profit,
-    Liquidated,
-}
-
-#[cw_serde]
-pub struct PriceDestinatedTrader {
-    pub limit_loss: PriceDestinatedStatus,
-    pub limit_profit: PriceDestinatedStatus,
-    pub liquidated: PriceDestinatedStatus,
-}
-#[cw_serde]
-pub enum PriceDestinatedStatus {
-    LimitLoss(Vec<Trade>),
-    Liquidated(Vec<Trade>),
-    LimitProfit(Vec<Trade>),
-}
 #[cw_serde]
 pub struct Trade {
     //user
@@ -148,6 +130,42 @@ pub fn trade_remove(storage: &mut dyn Storage, trader: Addr) -> StdResult<()> {
 
 pub fn trade_load(storage: &mut dyn Storage, trader: Addr) -> StdResult<Trade> {
     trades().load(storage, trader)
+}
+
+pub enum IndexType {
+    Loss,
+    Profit,
+    Liquidated,
+}
+
+#[cw_serde]
+pub struct PriceDestinatedTrader {
+    pub limit_loss: PriceDestinatedStatus,
+    pub limit_profit: PriceDestinatedStatus,
+    pub liquidated: PriceDestinatedStatus,
+}
+
+#[cw_serde]
+pub enum PriceDestinatedStatus {
+    LimitLoss(Vec<Trade>),
+    Liquidated(Vec<Trade>),
+    LimitProfit(Vec<Trade>),
+}
+
+impl PriceDestinatedTrader {
+    pub fn is_zero(&self) -> bool {
+        self.limit_loss.is_empty() && self.limit_profit.is_empty() && self.liquidated.is_empty()
+    }
+}
+
+impl PriceDestinatedStatus {
+    pub fn is_empty(&self) -> bool {
+        match self {
+            PriceDestinatedStatus::LimitLoss(vec) => vec.is_empty(),
+            PriceDestinatedStatus::Liquidated(vec) => vec.is_empty(),
+            PriceDestinatedStatus::LimitProfit(vec) => vec.is_empty(),
+        }
+    }
 }
 
 fn get_traders_in_price_range(
