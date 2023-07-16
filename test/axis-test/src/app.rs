@@ -1,5 +1,7 @@
 use std::str::FromStr;
 
+use anyhow::Error;
+use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{
     coin,
     testing::{MockApi, MockStorage},
@@ -7,20 +9,20 @@ use cosmwasm_std::{
     Uint64,
 };
 use cw_multi_test::{
-    App, BankKeeper, ContractWrapper, DistributionKeeper, Executor, FailingModule, Router,
-    StakeKeeper, WasmKeeper,
+    App, AppResponse, BankKeeper, ContractWrapper, DistributionKeeper, Executor, FailingModule,
+    Router, StakeKeeper, WasmKeeper,
 };
 
 use axis_protocol::{
     axis::{ConfigResponse as AxisConfigResponse, QueryMsg as AxisQueryMsg},
     core::{
         ConfigResponse as CoreConfigResponse, ExecuteMsg as CoreExecuteMsg,
-        InstantiateMsg as CoreInstantiateMsg, QueryMsg as CoreQueryMsg,
+        InstantiateMsg as CoreInstantiateMsg, PairLpStakingContractResponse,
+        PairMarketContractResponse, PairPoolContractResponse, QueryMsg as CoreQueryMsg,
     },
     es_axis::{ConfigResponse as EsAxisConfigResponse, QueryMsg as EsAxisQueryMsg},
-    lp_staking::InstantiateMsg as LpStakingInstantiateMsg,
     market::InstantiateMsg as MarketInstantiateMsg,
-    pool::{ConfigResponse, InstantiateMsg as PoolInstantiateMsg, QueryMsg},
+    pool::{InstantiateMsg as PoolInstantiateMsg, QueryMsg as PoolQueryMsg},
     staking::{
         ConfigResponse as StakingConfigResponse, InstantiateMsg as StakingInstatiateMsg,
         QueryMsg as StakingQueryMsg,
@@ -60,6 +62,7 @@ use es_axis::contract::{
 use lp_staking::contract::{
     execute as lp_staking_execute, instantiate as lp_staking_instantiate, query as lp_staking_query,
 };
+#[cw_serde]
 pub struct Contracts {
     pub market_contract: Addr,
     pub core_contract: Addr,
@@ -67,12 +70,14 @@ pub struct Contracts {
     pub staking_contract: Addr,
     pub vault_contract: Addr,
     pub es_axis_contract: Addr,
-    pub axis_contarct: Addr,
+    pub axis_contract: Addr,
     pub lp_staking_contract: Addr,
 }
 pub const ADMIN: &str = "admin";
-pub const BASE_DENOM: &str = "ubtc";
-pub const PRICE_DENOM: &str = "uusdc";
+pub const BTC_DENOM: &str = "ubtc";
+pub const USDC_DENOM: &str = "uusdc";
+pub const ETH_DENOM: &str = "ueth";
+pub const USDT_DENOM: &str = "uusdt";
 pub const TRADER1: &str = "trader1";
 pub const TRADER2: &str = "trader2";
 pub const TRADER3: &str = "trader3";
@@ -88,7 +93,7 @@ pub fn init_default_balances(
         FailingModule<IbcMsg, IbcQuery, Empty>,
         FailingModule<GovMsg, Empty, Empty>,
     >,
-    _api: &dyn Api,
+    api: &dyn Api,
     storage: &mut dyn Storage,
 ) {
     router
@@ -97,8 +102,10 @@ pub fn init_default_balances(
             storage,
             &Addr::unchecked(ADMIN),
             vec![
-                coin(1_000_000_000_000_000_000, PRICE_DENOM.to_string()),
-                coin(1_000_000_000_000_000_000, BASE_DENOM.to_string()),
+                coin(1_000_000_000_000_000_000, USDC_DENOM.to_string()),
+                coin(1_000_000_000_000_000_000, BTC_DENOM.to_string()),
+                coin(1_000_000_000_000_000_000, ETH_DENOM.to_string()),
+                coin(1_000_000_000_000_000_000, USDT_DENOM.to_string()),
             ],
         )
         .unwrap();
@@ -109,8 +116,10 @@ pub fn init_default_balances(
             storage,
             &Addr::unchecked(TRADER1),
             vec![
-                coin(100_000, BASE_DENOM.to_string()),
-                coin(100_000, PRICE_DENOM.to_string()),
+                coin(10_000_000, BTC_DENOM.to_string()),
+                coin(10_000_000, USDC_DENOM.to_string()),
+                coin(10_000_000, ETH_DENOM.to_string()),
+                coin(10_000_000, USDT_DENOM.to_string()),
             ],
         )
         .unwrap();
@@ -121,8 +130,10 @@ pub fn init_default_balances(
             storage,
             &Addr::unchecked(TRADER2),
             vec![
-                coin(10_000_000, BASE_DENOM.to_string()),
-                coin(10_000_000, PRICE_DENOM.to_string()),
+                coin(10_000_000, BTC_DENOM.to_string()),
+                coin(10_000_000, USDC_DENOM.to_string()),
+                coin(10_000_000, ETH_DENOM.to_string()),
+                coin(10_000_000, USDT_DENOM.to_string()),
             ],
         )
         .unwrap();
@@ -133,8 +144,8 @@ pub fn init_default_balances(
             storage,
             &Addr::unchecked(TRADER3),
             vec![
-                coin(10_000_000, BASE_DENOM.to_string()),
-                coin(10_000_000, PRICE_DENOM.to_string()),
+                coin(10_000_000, BTC_DENOM.to_string()),
+                coin(10_000_000, USDC_DENOM.to_string()),
             ],
         )
         .unwrap();
@@ -144,8 +155,10 @@ pub fn init_default_balances(
             storage,
             &Addr::unchecked(TRADER4),
             vec![
-                coin(10_000_000, BASE_DENOM.to_string()),
-                coin(10_000_000, PRICE_DENOM.to_string()),
+                coin(10_000_000, BTC_DENOM.to_string()),
+                coin(10_000_000, USDC_DENOM.to_string()),
+                coin(10_000_000, ETH_DENOM.to_string()),
+                coin(10_000_000, USDT_DENOM.to_string()),
             ],
         )
         .unwrap();
@@ -155,14 +168,16 @@ pub fn init_default_balances(
             storage,
             &Addr::unchecked(TRADER5),
             vec![
-                coin(10_000_000, BASE_DENOM.to_string()),
-                coin(10_000_000, PRICE_DENOM.to_string()),
+                coin(10_000_000, BTC_DENOM.to_string()),
+                coin(10_000_000, USDC_DENOM.to_string()),
+                coin(10_000_000, ETH_DENOM.to_string()),
+                coin(10_000_000, USDT_DENOM.to_string()),
             ],
         )
         .unwrap();
 }
 
-pub fn setup_test(
+pub fn setup_init(
     app: &mut App<
         BankKeeper,
         MockApi,
@@ -174,9 +189,9 @@ pub fn setup_test(
         FailingModule<IbcMsg, IbcQuery, Empty>,
         FailingModule<GovMsg, Empty, Empty>,
     >,
-    base_coin_amount: Uint128,
-    price_coin_amount: Uint128,
-) -> (Addr, Addr) {
+    base_denom: &str,
+    price_denom: &str,
+) -> Contracts {
     let axis_code = app.store_code(Box::new(ContractWrapper::new(
         axis_execute,
         axis_instantiate,
@@ -233,11 +248,11 @@ pub fn setup_test(
             core_code,
             Addr::unchecked(ADMIN),
             &CoreInstantiateMsg {
-                accept_price_denoms: vec!["uusdc".to_string()],
+                accept_price_denoms: vec![USDC_DENOM.to_string()],
                 axis_code_id: axis_code,
             },
             &vec![],
-            "RUNE CORE",
+            "Axis Core",
             Some(ADMIN.to_string()),
         )
         .unwrap();
@@ -284,7 +299,7 @@ pub fn setup_test(
                 core_contract: core_contract.to_string(),
                 es_axis_contract: es_axis_contract.to_string(),
                 es_axis_denom,
-                denom_list: vec![PRICE_DENOM.to_string(), BASE_DENOM.to_string()],
+                denom_list: vec![USDC_DENOM.to_string(), BTC_DENOM.to_string()],
             },
             &vec![],
             "axis_vault",
@@ -292,104 +307,208 @@ pub fn setup_test(
         )
         .unwrap();
     //@@ core setting
-    let update_config_res = app
-        .execute_contract(
-            Addr::unchecked(ADMIN),
-            core_contract.to_owned(),
-            &CoreExecuteMsg::UpdateConfig {
-                vault_contract: Some(vault_contract.to_string()),
-                staking_contract: Some(staking_contract.to_string()),
-            },
-            &vec![],
-        )
-        .unwrap();
+    app.execute_contract(
+        Addr::unchecked(ADMIN),
+        core_contract.to_owned(),
+        &CoreExecuteMsg::UpdateConfig {
+            vault_contract: Some(vault_contract.to_string()),
+            staking_contract: Some(staking_contract.to_string()),
+        },
+        &vec![],
+    )
+    .unwrap();
 
-    let create_pair_res = app
-        .execute_contract(
-            Addr::unchecked(ADMIN),
-            core_contract.clone(),
-            &CoreExecuteMsg::CreatePair {
-                pool_init_msg: PoolInstantiateMsg {
-                    base_denom: BASE_DENOM.to_string(),
+    app.execute_contract(
+        Addr::unchecked(ADMIN),
+        core_contract.clone(),
+        &CoreExecuteMsg::CreatePair {
+            pool_init_msg: PoolInstantiateMsg {
+                base_denom: base_denom.to_string(),
+                base_decimal: 6,
+                price_denom: price_denom.to_string(),
+                price_decimal: 6,
+                maximum_borrow_rate: 10,
+                market_code_id: market_code,
+                market_instantiate_msg: MarketInstantiateMsg {
+                    base_denom: base_denom.to_string(),
                     base_decimal: 6,
-                    price_denom: PRICE_DENOM.to_string(),
+                    price_denom: price_denom.to_string(),
                     price_decimal: 6,
-                    maximum_borrow_rate: 10,
-                    market_code_id: market_code,
-
-                    market_instantiate_msg: MarketInstantiateMsg {
-                        base_denom: BASE_DENOM.to_string(),
-                        base_decimal: 6,
-                        price_denom: PRICE_DENOM.to_string(),
-                        price_decimal: 6,
-                        max_leverage: 10,
-                        borrow_fee_rate: 1,
-                        open_close_fee_rate: 1,
-                        limit_profit_loss_open_fee_rate: 2,
-                        axis_contract: axis_contract.to_owned(),
-                        vault_contract,
-                    },
-                    lp_staking_code_id: lp_staking_code,
-                    maker: Addr::unchecked(ADMIN),
-                    axis_contract,
+                    max_leverage: 10,
+                    borrow_fee_rate: 1,
+                    open_close_fee_rate: 1,
+                    limit_profit_loss_open_fee_rate: 2,
+                    axis_contract: axis_contract.to_owned(),
+                    vault_contract: vault_contract.to_owned(),
                 },
-                pool_code_id: pool_code,
+                lp_staking_code_id: lp_staking_code,
+                maker: Addr::unchecked(ADMIN),
+                axis_contract: axis_contract.to_owned(),
             },
-            &vec![
-                coin(1_000_000_000_000, BASE_DENOM),
-                coin(1_000_000_000_000, PRICE_DENOM),
-            ],
-        )
-        .unwrap();
-    let pair_response: PairContractResponse = app
+            pool_code_id: pool_code,
+        },
+        &vec![
+            coin(1_000_000_000_000, BTC_DENOM),
+            coin(1_000_000_000_000, USDC_DENOM),
+        ],
+    )
+    .unwrap();
+    let pair_response: PairPoolContractResponse = app
         .wrap()
         .query_wasm_smart(
-            core_contract,
-            &CoreQueryMsg::GetPairContract {
-                base_denom: BASE_DENOM.to_owned(),
-                price_denom: PRICE_DENOM.to_owned(),
+            core_contract.to_owned(),
+            &CoreQueryMsg::GetPairPoolContract {
+                base_denom: BTC_DENOM.to_owned(),
+                price_denom: USDC_DENOM.to_owned(),
             },
         )
         .unwrap();
 
     let pool_contract = pair_response.pool_contract;
-
-    let msg = QueryMsg::GetConfig {};
-    let pool_config: ConfigResponse = app
+    let core_res: PairMarketContractResponse = app
         .wrap()
-        .query_wasm_smart(pool_contract.clone(), &msg)
+        .query_wasm_smart(
+            core_contract.to_owned(),
+            &CoreQueryMsg::GetPairMarketContract {
+                base_denom: BTC_DENOM.to_string(),
+                price_denom: USDC_DENOM.to_string(),
+            },
+        )
         .unwrap();
-    let market_contract = pool_config.market_contract;
-    (
-        Addr::unchecked(pool_contract),
-        Addr::unchecked(market_contract),
-    )
+    let market_contract = core_res.market_contract;
+
+    let core_res: PairLpStakingContractResponse = app
+        .wrap()
+        .query_wasm_smart(
+            core_contract.to_owned(),
+            &CoreQueryMsg::GetPairLpStakingContract {
+                base_denom: BTC_DENOM.to_string(),
+                price_denom: USDC_DENOM.to_string(),
+            },
+        )
+        .unwrap();
+    let lp_staking_contract = core_res.lp_staking_contract;
+    Contracts {
+        market_contract,
+        core_contract,
+        pool_contract,
+        staking_contract,
+        vault_contract,
+        es_axis_contract,
+        axis_contract,
+        lp_staking_contract,
+    }
 }
 
 pub fn init_exchange_rates() -> Vec<DenomOracleExchangeRatePair> {
     vec![
         DenomOracleExchangeRatePair {
-            denom: PRICE_DENOM.to_string(),
+            denom: USDC_DENOM.to_string(),
             oracle_exchange_rate: OracleExchangeRate {
                 exchange_rate: Decimal::from_str("1").unwrap(),
                 last_update: Uint64::zero(),
             },
         },
         DenomOracleExchangeRatePair {
-            denom: BASE_DENOM.to_string(),
+            denom: BTC_DENOM.to_string(),
             oracle_exchange_rate: OracleExchangeRate {
-                exchange_rate: Decimal::from_str("10").unwrap(),
+                exchange_rate: Decimal::from_str("10000").unwrap(),
                 last_update: Uint64::zero(),
             },
         },
         DenomOracleExchangeRatePair {
-            denom: BASE_DENOM.to_string(),
+            denom: ETH_DENOM.to_string(),
             oracle_exchange_rate: OracleExchangeRate {
-                exchange_rate: Decimal::from_str("11").unwrap(),
-                last_update: Uint64::one(),
+                exchange_rate: Decimal::from_str("1000").unwrap(),
+                last_update: Uint64::zero(),
             },
         },
     ]
 }
 
-//@@ repay and leverage_borrow function is market contract test complete
+pub fn create_pair(
+    app: &mut App<
+        BankKeeper,
+        MockApi,
+        MockStorage,
+        SeiModule,
+        WasmKeeper<SeiMsg, SeiQueryWrapper>,
+        StakeKeeper,
+        DistributionKeeper,
+        FailingModule<IbcMsg, IbcQuery, Empty>,
+        FailingModule<GovMsg, Empty, Empty>,
+    >,
+    sender: &Addr,
+    contracts: &Contracts,
+    base_denom: &str,
+    price_denom: &str,
+    base_amount: u128,
+    price_amount: u128,
+) -> Result<Addr, Error> {
+    let pool_code = app.store_code(Box::new(
+        Box::new(ContractWrapper::new(
+            pool_execute,
+            pool_instantiate,
+            pool_query,
+        ))
+        .with_reply(pool_reply),
+    ));
+    let market_code = app.store_code(Box::new(ContractWrapper::new(
+        market_execute,
+        market_instantiate,
+        market_query,
+    )));
+    let lp_staking_code = app.store_code(Box::new(ContractWrapper::new(
+        lp_staking_execute,
+        lp_staking_instantiate,
+        lp_staking_query,
+    )));
+    let result = app.execute_contract(
+        sender.to_owned(),
+        contracts.core_contract.to_owned(),
+        &CoreExecuteMsg::CreatePair {
+            pool_init_msg: PoolInstantiateMsg {
+                base_denom: base_denom.to_owned(),
+                base_decimal: 6,
+                price_denom: price_denom.to_owned(),
+                price_decimal: 6,
+                maximum_borrow_rate: 10,
+                market_code_id: market_code,
+
+                market_instantiate_msg: MarketInstantiateMsg {
+                    base_denom: base_denom.to_owned(),
+                    base_decimal: 6,
+                    price_denom: price_denom.to_owned(),
+                    price_decimal: 6,
+                    max_leverage: 10,
+                    borrow_fee_rate: 1,
+                    open_close_fee_rate: 1,
+                    limit_profit_loss_open_fee_rate: 2,
+                    axis_contract: contracts.axis_contract.to_owned(),
+                    vault_contract: contracts.vault_contract.to_owned(),
+                },
+                lp_staking_code_id: lp_staking_code,
+                maker: sender.to_owned(),
+                axis_contract: contracts.axis_contract.to_owned(),
+            },
+            pool_code_id: pool_code,
+        },
+        &vec![
+            coin(base_amount, base_denom),
+            coin(price_amount, price_denom),
+        ],
+    );
+    assert!(result.is_ok());
+    let core_res: PairPoolContractResponse = app
+        .wrap()
+        .query_wasm_smart(
+            contracts.core_contract.to_owned(),
+            &CoreQueryMsg::GetPairPoolContract {
+                base_denom: base_denom.to_string(),
+                price_denom: price_denom.to_string(),
+            },
+        )
+        .unwrap();
+    let pool_contract = core_res.pool_contract;
+    Ok(pool_contract)
+}

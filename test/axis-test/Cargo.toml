@@ -55,6 +55,6 @@ sei-cosmwasm = { version = "0.4.10" }
 sei-integration-tests = "0.4.10"
 cw-multi-test = "0.16.2"
 
-
+anyhow = "1.0.71"
 
 
