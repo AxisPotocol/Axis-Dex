@@ -86,7 +86,7 @@ fn test_deposit() {
         TestDeposit {
             reserve_asset_amount: 10_000,
             reserve_stable_amount: 5_000,
-            init_total_supply: 7_071, // Set directly
+            init_total_supply: 7_071,
             deposit_asset_amount: 2_000,
             deposit_stable_amount: 2_000,
             expect_lp_amount: 1414,
@@ -97,7 +97,7 @@ fn test_deposit() {
         TestDeposit {
             reserve_asset_amount: 10_000,
             reserve_stable_amount: 10_000,
-            init_total_supply: 10_000, // Set directly
+            init_total_supply: 10_000,
             deposit_asset_amount: 2_000,
             deposit_stable_amount: 1_000,
             expect_lp_amount: 1_000,
