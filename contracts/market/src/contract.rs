@@ -178,10 +178,10 @@ pub mod execute {
             Position::Short => state.price_coin_total_fee += open_fee_amount,
         }
         save_state(deps.storage, &state)?;
-        println!("collateral_amount = {:?}", collateral_amount);
+
         let collateral_amount = collateral_amount - open_fee_amount;
         //@@ 이 로직 확인!
-        println!("collateral_amount = {:?}", collateral_amount);
+
         let (position_size, leverage_amount, liquidation_price) = {
             match position {
                 Position::Long => get_trade_information(
