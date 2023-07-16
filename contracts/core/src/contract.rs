@@ -10,10 +10,16 @@ use sei_cosmwasm::{SeiMsg, SeiQueryWrapper};
 use crate::error::ContractError;
 
 use crate::helpers::find_attribute_value;
-use crate::state::{register_axis_contract, register_pair_pool_contract, Config, CONFIG};
+use crate::state::{
+    load_config, register_axis_contract, register_pair_pool_contract, Config, CONFIG,
+    PAIR_MARKET_CONTRACT, PAIR_POOL, PAIR_POOL_LP_STAKING_CONTRACT,
+};
 use axis_protocol::axis::InstantiateMsg as AxisInstantiateMsg;
 use axis_protocol::core::{ConfigResponse, ExecuteMsg, InstantiateMsg, QueryMsg};
-use axis_protocol::pool::{ExecuteMsg as PoolExecuteMsg, InstantiateMsg as PoolInstantiateMsg};
+use axis_protocol::pool::{
+    ConfigResponse as PoolConfigReponse, ExecuteMsg as PoolExecuteMsg,
+    InstantiateMsg as PoolInstantiateMsg, QueryMsg as PoolQueryMsg,
+};
 
 // version info for migration info
 const CONTRACT_NAME: &str = "crates.io:core";
@@ -67,7 +73,7 @@ pub fn execute(
             pool_init_msg,
             pool_code_id,
         } => execute::create_pair(deps, info, pool_init_msg, pool_code_id),
-        ExecuteMsg::RegisterPriceBase { price_denom } => {
+        ExecuteMsg::RegisterPriceDenom { price_denom } => {
             execute::register_price_denom(deps, info, price_denom)
         }
         ExecuteMsg::AllPoolLock {} => execute::all_pool_lock(deps, info),
@@ -85,18 +91,6 @@ pub fn execute(
             vault_contract,
             staking_contract,
         } => execute::update_config(deps, info, vault_contract, staking_contract),
-        ExecuteMsg::RegisterPairLpStaking {
-            base_denom,
-            price_denom,
-            lp_contract,
-        } => execute::register_lp_contract(deps, info, base_denom, price_denom, lp_contract),
-        ExecuteMsg::RegisterPairMarket {
-            base_denom,
-            price_denom,
-            market_contract,
-        } => {
-            execute::register_market_contract(deps, info, base_denom, price_denom, market_contract)
-        }
     }
 }
 
@@ -111,10 +105,7 @@ pub mod execute {
 
     use crate::{
         helpers::{check_denom_and_get_validate_denom, check_owner, check_valid_price},
-        state::{
-            check_pair, load_config, load_pair, save_config, PAIR_MARKET_CONTRACT, PAIR_POOL,
-            PAIR_POOL_LP_STAKING_CONTRACT,
-        },
+        state::{check_pair, load_config, load_pair, save_config, PAIR_POOL},
     };
 
     use super::*;
@@ -303,41 +294,6 @@ pub mod execute {
         }
         Ok(Response::new())
     }
-
-    pub fn register_lp_contract(
-        deps: DepsMut<SeiQueryWrapper>,
-        info: MessageInfo,
-        base_denom: String,
-        price_denom: String,
-        lp_contract: Addr,
-    ) -> Result<Response<SeiMsg>, ContractError> {
-        let pair_addr = load_pair(deps.storage, &base_denom, &price_denom)?;
-        match pair_addr == info.sender {
-            true => Ok(()),
-            false => Err(ContractError::Unauthorized {}),
-        }?;
-        PAIR_POOL_LP_STAKING_CONTRACT.save(
-            deps.storage,
-            (&base_denom, &price_denom),
-            &lp_contract,
-        )?;
-        Ok(Response::new())
-    }
-    pub fn register_market_contract(
-        deps: DepsMut<SeiQueryWrapper>,
-        info: MessageInfo,
-        base_denom: String,
-        price_denom: String,
-        lp_contract: Addr,
-    ) -> Result<Response<SeiMsg>, ContractError> {
-        let pair_addr = load_pair(deps.storage, &base_denom, &price_denom)?;
-        match pair_addr == info.sender {
-            true => Ok(()),
-            false => Err(ContractError::Unauthorized {}),
-        }?;
-        PAIR_MARKET_CONTRACT.save(deps.storage, (&base_denom, &price_denom), &lp_contract)?;
-        Ok(Response::new())
-    }
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -443,30 +399,39 @@ pub fn reply(
     match msg.id {
         1 => match msg.result {
             SubMsgResult::Ok(res) => match res.data {
-                Some(_) => {
-                    let axis_contract_addr =
-                        find_attribute_value(&res.events[1].attributes, "contract_address")?;
-                    register_axis_contract(deps.storage, Addr::unchecked(axis_contract_addr))?;
+                Some(data) => {
+                    let addr = String::from_utf8(data.to_vec()).unwrap();
+                    let axis_contract_addr = deps.api.addr_validate(addr.trim())?;
+                    register_axis_contract(deps.storage, axis_contract_addr)?;
+
                     Ok(Response::new())
                 }
-                None => Err(ContractError::MissingPoolContractAddr {}),
+                None => Err(ContractError::MissingAxisContractAddr {}),
             },
             SubMsgResult::Err(_) => Err(ContractError::AxisContractInstantiationFailed {}),
         },
         2 => match msg.result {
             SubMsgResult::Ok(res) => match res.data {
-                Some(_) => {
-                    let pool_contract_addr =
-                        find_attribute_value(&res.events[1].attributes, "contract_address")?;
+                Some(data) => {
+                    let addr = String::from_utf8(data.to_vec()).unwrap();
+                    let pool_contract_addr = deps.api.addr_validate(addr.trim())?;
                     let base_denom = find_attribute_value(&res.events[1].attributes, "base_denom")?;
                     let price_denom =
                         find_attribute_value(&res.events[1].attributes, "price_denom")?;
 
-                    register_pair_pool_contract(
+                    let key = (&base_denom, &price_denom);
+
+                    PAIR_POOL.save(deps.storage, key, &pool_contract_addr)?;
+
+                    let pool_config: PoolConfigReponse = deps
+                        .querier
+                        .query_wasm_smart(pool_contract_addr, &PoolQueryMsg::GetConfig {})?;
+
+                    PAIR_MARKET_CONTRACT.save(deps.storage, key, &pool_config.market_contract)?;
+                    PAIR_POOL_LP_STAKING_CONTRACT.save(
                         deps.storage,
-                        &base_denom,
-                        &price_denom,
-                        Addr::unchecked(pool_contract_addr),
+                        key,
+                        &pool_config.lp_staking_contract,
                     )?;
                     Ok(Response::new())
                 }

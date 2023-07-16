@@ -389,13 +389,11 @@ pub fn reply(
     match msg.id {
         1 => match msg.result {
             SubMsgResult::Ok(res) => match res.data {
-                Some(_) => {
-                    let es_axis_contract_addr =
-                        find_attribute_value(&res.events[1].attributes, "contract_address")?;
-                    register_es_axis(
-                        deps.storage,
-                        deps.api.addr_validate(&es_axis_contract_addr)?,
-                    )?;
+                Some(data) => {
+                    let addr = String::from_utf8(data.to_vec()).unwrap();
+                    let es_axis_contract_addr = deps.api.addr_validate(addr.trim())?;
+
+                    register_es_axis(deps.storage, es_axis_contract_addr)?;
                     Ok(Response::new())
                 }
                 None => Err(ContractError::MissingEsAxisContractAddr {}),

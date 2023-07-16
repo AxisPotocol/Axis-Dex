@@ -23,6 +23,8 @@ pub enum ContractError {
     PoolContractInstantiationFailed {},
     #[error("Axis Contract Instantiate Failed")]
     AxisContractInstantiationFailed {},
+    #[error("Missing Axis Contarct")]
+    MissingAxisContractAddr {},
     #[error("Invalid Reply ID")]
     InvalidReplyId {},
 }

@@ -1,7 +1,7 @@
 use crate::lp_staking::InstantiateMsg as LpStakingInstantiateMsg;
 use crate::market::InstantiateMsg as MarketInstantiateMsg;
 use cosmwasm_schema::{cw_serde, QueryResponses};
-use cosmwasm_std::{Addr, Uint128};
+use cosmwasm_std::{Addr, Decimal, Uint128};
 
 #[cw_serde]
 pub struct InstantiateMsg {
@@ -64,25 +64,26 @@ pub struct PositionBalance {
 
 #[cw_serde]
 pub struct ConfigResponse {
+    pub core_contract: Addr,
     pub lock: bool,
     pub market_contract: Addr,
+    pub lp_decimal: u8,
+    pub lp_denom: String,
     pub maximum_borrow_rate: u8,
     pub lp_staking_contract: Addr,
+    pub base_decimal: u8,
+    pub price_decimal: u8,
+    pub price_denom: String,
+    pub base_denom: String,
+    pub withdraw_fee_rate: Decimal,
 }
 
 #[cw_serde]
 pub struct PoolResponse {
-    pub base_denom: String,
     pub base_amount: Uint128,
-    pub base_decimal: u8,
-    pub price_denom: String,
     pub price_amount: Uint128,
-    pub price_decimal: u8,
     pub base_borrow_amount: Uint128,
     pub price_borrow_amount: Uint128,
-    pub lp_denom: String,
-    pub lp_decimal: u8,
-    pub lp_total_supply: Uint128,
 }
 
 // #[cw_serde]

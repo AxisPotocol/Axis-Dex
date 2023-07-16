@@ -13,7 +13,7 @@ pub enum ExecuteMsg {
         pool_init_msg: PoolInstantiateMsg,
         pool_code_id: u64,
     },
-    RegisterPriceBase {
+    RegisterPriceDenom {
         price_denom: String,
     },
     AllPoolLock {},
@@ -30,16 +30,6 @@ pub enum ExecuteMsg {
     UpdateConfig {
         vault_contract: Option<String>,
         staking_contract: Option<String>,
-    },
-    RegisterPairLpStaking {
-        base_denom: String,
-        price_denom: String,
-        lp_contract: Addr,
-    },
-    RegisterPairMarket {
-        base_denom: String,
-        price_denom: String,
-        market_contract: Addr,
     },
 }
 

@@ -58,6 +58,7 @@ dependencies = [
 name = "axis-test"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "axis",
  "axis-protocol",
  "core",

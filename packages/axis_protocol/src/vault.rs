@@ -11,7 +11,12 @@ pub struct InstantiateMsg {
 
 #[cw_serde]
 pub enum ExecuteMsg {
-    RecievedFee { denom: String, amount: Uint128 },
+    RecievedFee {
+        base_denom: String,
+        base_amount: Uint128,
+        price_denom: String,
+        price_amount: Uint128,
+    },
     Swap {},
     Setting {},
 }

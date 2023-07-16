@@ -13,8 +13,7 @@ pub fn check_valid_price(config: &Config, price_denom: &String) -> Result<(), Co
     match config.accept_price_denoms.contains(price_denom) {
         true => Ok(()),
         false => Err(ContractError::InvalidPrice {}),
-    }?;
-    Ok(())
+    }
 }
 
 pub fn check_denom_and_get_validate_denom(
