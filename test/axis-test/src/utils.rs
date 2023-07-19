@@ -1,10 +1,13 @@
 use anyhow::Error;
-use cosmwasm_std::{coin, Addr};
+use cosmwasm_std::{coin, Addr, Coin};
 
 use sei_cosmwasm::{SeiMsg, SeiQueryWrapper};
 use sei_integration_tests::module::SeiModule;
 
-use axis_protocol::{market::ExecuteMsg as MarketExecuteMsg, pool::ExecuteMsg as PoolExecuteMsg};
+use axis_protocol::{
+    core::ExecuteMsg as CoreExecuteMsg, market::ExecuteMsg as MarketExecuteMsg,
+    pool::ExecuteMsg as PoolExecuteMsg, staking::ExecuteMsg as StakingExecuteMsg,
+};
 use cosmwasm_std::{
     testing::{MockApi, MockStorage},
     Empty, GovMsg, IbcMsg, IbcQuery,
@@ -128,6 +131,82 @@ pub fn position_close(
         trader.to_owned(),
         market_contract.to_owned(),
         close_msg,
+        &vec![],
+    );
+    result
+}
+
+pub fn staking(
+    app: &mut App<
+        BankKeeper,
+        MockApi,
+        MockStorage,
+        SeiModule,
+        WasmKeeper<SeiMsg, SeiQueryWrapper>,
+        StakeKeeper,
+        DistributionKeeper,
+        FailingModule<IbcMsg, IbcQuery, Empty>,
+        FailingModule<GovMsg, Empty, Empty>,
+    >,
+    staking_contract: &Addr,
+    staker: &Addr,
+    funds: &Vec<Coin>,
+) -> Result<AppResponse, Error> {
+    let staking_msg = &StakingExecuteMsg::Staking {};
+    let result = app.execute_contract(
+        staker.to_owned(),
+        staking_contract.to_owned(),
+        staking_msg,
+        funds,
+    );
+    result
+}
+
+pub fn un_staking(
+    app: &mut App<
+        BankKeeper,
+        MockApi,
+        MockStorage,
+        SeiModule,
+        WasmKeeper<SeiMsg, SeiQueryWrapper>,
+        StakeKeeper,
+        DistributionKeeper,
+        FailingModule<IbcMsg, IbcQuery, Empty>,
+        FailingModule<GovMsg, Empty, Empty>,
+    >,
+    staking_contract: &Addr,
+    staker: &Addr,
+) -> Result<AppResponse, Error> {
+    let un_staking_msg = &StakingExecuteMsg::UnStaking {};
+    let result = app.execute_contract(
+        staker.to_owned(),
+        staking_contract.to_owned(),
+        un_staking_msg,
+        &vec![],
+    );
+    result
+}
+
+pub fn setting(
+    app: &mut App<
+        BankKeeper,
+        MockApi,
+        MockStorage,
+        SeiModule,
+        WasmKeeper<SeiMsg, SeiQueryWrapper>,
+        StakeKeeper,
+        DistributionKeeper,
+        FailingModule<IbcMsg, IbcQuery, Empty>,
+        FailingModule<GovMsg, Empty, Empty>,
+    >,
+    core_contract: &Addr,
+    setter: &Addr,
+) -> Result<AppResponse, Error> {
+    let setting_msg = &CoreExecuteMsg::Setting {};
+    let result = app.execute_contract(
+        setter.to_owned(),
+        core_contract.to_owned(),
+        setting_msg,
         &vec![],
     );
     result

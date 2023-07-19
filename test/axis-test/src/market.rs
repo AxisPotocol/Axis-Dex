@@ -44,7 +44,7 @@ pub fn valid_position_open() {
             },
         )
         .unwrap();
-    println!("{:?}", trade);
+
     let res: ExchangeRatesResponse = app
         .wrap()
         .query(&QueryRequest::Custom(SeiQueryWrapper {
@@ -59,7 +59,7 @@ pub fn valid_position_open() {
         .unwrap()
         .oracle_exchange_rate
         .exchange_rate;
-    println!("{:?}", btc_amount);
+
     assert_eq!(trade.collateral_amount.u128(), 9_900_000);
     assert_eq!(trade.collateral_denom, base_denom);
     assert_eq!(trade.entry_price, btc_amount.atomics());
@@ -116,7 +116,6 @@ pub fn invalid_position_open() {
         .query_wasm_smart(contracts.pool_contract, &PoolQueryMsg::GetPool {})
         .unwrap();
     let pool_base_amount = pool_res.base_amount;
-    // println!("pool_base_amount = {:?}", pool_base_amount);
 
     //@@overflow position size test
     let result = position_open(
@@ -146,6 +145,18 @@ pub fn invalid_position_open() {
         base_denom,
     );
     assert!(result.is_err());
+
+    //@@Invalid usd value
+    let result = position_open(
+        &mut app,
+        &market_contract,
+        &trader,
+        true,
+        market_config.max_leverage,
+        10,
+        base_denom,
+    );
+    assert!(result.is_err())
 }
 
 #[test]
@@ -168,5 +179,5 @@ pub fn valid_position_close() {
 
     assert!(result.is_ok());
     let result = position_close(&mut app, &market_contract, &trader);
-    assert!(result.is_ok())
+    assert!(result.is_ok());
 }
