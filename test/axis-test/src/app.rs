@@ -38,7 +38,7 @@ use axis::contract::{
 };
 use core::contract::{
     execute as core_execute, instantiate as core_instantiate, query as core_query,
-    reply as core_reply,
+    reply as core_reply, test_sudo,
 };
 use market::contract::{
     execute as market_execute, instantiate as market_instantiate, query as market_query,
@@ -250,6 +250,7 @@ pub fn setup_init(
             &CoreInstantiateMsg {
                 accept_price_denoms: vec![USDC_DENOM.to_string()],
                 axis_code_id: axis_code,
+                next_update_timestamp: 10,
             },
             &vec![],
             "Axis Core",

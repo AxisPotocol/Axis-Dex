@@ -87,7 +87,7 @@ fn test_deposit() {
         let mut app = mock_app(init_default_balances, init_exchange_rates());
 
         let contracts = setup_init(&mut app, BTC_DENOM, USDC_DENOM);
-
+        
         let trader1 = Addr::unchecked(TRADER1);
         let base_denom = ETH_DENOM;
         let price_denom = USDC_DENOM;
