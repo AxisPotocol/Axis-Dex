@@ -27,8 +27,11 @@ pub fn check_pool_contract(pool_contract: &Addr, sender: &Addr) -> Result<(), Co
     }
 }
 
-pub fn check_lp_contract(lp_contract: &Addr, sender: &Addr) -> Result<(), ContractError> {
-    match *lp_contract == *sender {
+pub fn check_lp_staking_contract(
+    lp_staking_contract: &Addr,
+    sender: &Addr,
+) -> Result<(), ContractError> {
+    match *lp_staking_contract == *sender {
         true => Ok(()),
         false => Err(ContractError::Unauthorized {}),
     }

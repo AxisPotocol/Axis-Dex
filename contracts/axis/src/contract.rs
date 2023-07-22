@@ -8,7 +8,7 @@ use cw2::set_contract_version;
 use sei_cosmwasm::{SeiMsg, SeiQueryWrapper};
 
 use crate::error::ContractError;
-use crate::state::{Config, CONFIG};
+use crate::state::{save_state, Config, State, CONFIG};
 use axis_protocol::axis::{ExecuteMsg, InstantiateMsg, QueryMsg};
 
 // version info for migration info
@@ -34,11 +34,16 @@ pub fn instantiate(
     let config = Config {
         axis_denom: axis_denom.clone(),
         core_contract: info.sender.clone(),
-        pending_total_fee: Uint128::zero(),
         mint_per_epoch_trader_amount: (Uint128::new(300_000_000_000_000) / Uint128::new(365 * 5)),
         mint_per_epoch_maker_amount: (Uint128::new(300_000_000_000_000) / Uint128::new(365 * 5)),
     };
     CONFIG.save(deps.storage, &config)?;
+
+    let state = State {
+        pending_total_fee_usd: Uint128::zero(),
+    };
+    save_state(deps.storage, &state)?;
+
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 
     let axis_create_msg = SeiMsg::CreateDenom {
@@ -115,11 +120,11 @@ pub mod execute {
     use sei_cosmwasm::SeiQueryWrapper;
 
     use crate::{
-        helpers::{check_core_contract, check_lp_contract, check_market_contract},
+        helpers::{check_core_contract, check_lp_staking_contract, check_market_contract},
         query::{query_pair_lp_staking_contract, query_pair_market_contract},
         state::{
-            load_config, load_trader, save_config, update_pool_fee, update_trader,
-            EPOCH_TOTAL_FEE_AMOUNT, POOL_FEE, POOL_MINT_AMOUNT, TRADER,
+            load_config, load_state, load_trader, update_pool_fee, update_trader,
+            EPOCH_TOTAL_FEE_AMOUNT, POOL_FEE, POOL_MINT_AMOUNT, STATE, TRADER,
         },
     };
     use axis_protocol::query::query_epoch;
@@ -130,13 +135,14 @@ pub mod execute {
         info: MessageInfo,
         base_denom: String,
         price_denom: String,
-        trader: String,
+        trader: Addr,
         amount: Uint128,
     ) -> Result<Response<SeiMsg>, ContractError> {
-        let mut config = load_config(deps.storage)?;
+        let config = load_config(deps.storage)?;
+        let mut state = load_state(deps.storage)?;
         // @@ 굳이 market_contract 여야만함? 굳이굳이?????????????
         let epoch = query_epoch(deps.querier, &config.core_contract)?;
-        let trader = deps.api.addr_validate(trader.as_str())?;
+
         let market_contract = query_pair_market_contract(
             deps.querier,
             &config.core_contract,
@@ -152,8 +158,9 @@ pub mod execute {
             &format!("{}:{}", base_denom, price_denom),
             amount,
         )?;
-        config.pending_total_fee += amount;
-        save_config(deps.storage, &config)?;
+        state.pending_total_fee_usd += amount;
+        save_state(deps.storage, &state)?;
+
         Ok(Response::new())
     }
 
@@ -173,8 +180,6 @@ pub mod execute {
                 Ok(config.mint_per_epoch_trader_amount * ratio)
             })
             .sum::<Result<Uint128, ContractError>>()?;
-
-        save_config(deps.storage, &config)?;
 
         TRADER.remove(deps.storage, &info.sender);
 
@@ -212,7 +217,8 @@ pub mod execute {
             &base_denom,
             &price_denom,
         )?;
-        check_lp_contract(&pair_lp_staking_contract, &info.sender)?;
+
+        check_lp_staking_contract(&pair_lp_staking_contract, &info.sender)?;
         let axis_token = coin(amount.into(), config.axis_denom);
         let mint_msg = SeiMsg::MintTokens {
             amount: axis_token.to_owned(),
@@ -230,28 +236,31 @@ pub mod execute {
         deps: DepsMut<SeiQueryWrapper>,
         info: MessageInfo,
     ) -> Result<Response<SeiMsg>, ContractError> {
-        let mut config = load_config(deps.storage)?;
+        let config = load_config(deps.storage)?;
         check_core_contract(&config.core_contract, &info.sender)?;
         let epoch = query_epoch(deps.querier, &config.core_contract)? - 1;
         //24 hour
-
-        EPOCH_TOTAL_FEE_AMOUNT.save(deps.storage, epoch, &config.pending_total_fee)?;
+        let mut state = load_state(deps.storage)?;
+        EPOCH_TOTAL_FEE_AMOUNT.save(deps.storage, epoch, &state.pending_total_fee_usd)?;
 
         let pairs = POOL_FEE
             .range(deps.storage, None, None, Order::Ascending)
             .collect::<StdResult<Vec<(String, Uint128)>>>()?;
 
         for (pair, pool_epoch_fee) in pairs {
-            let ratio = Decimal::from_ratio(pool_epoch_fee, config.pending_total_fee);
+            let ratio = Decimal::from_ratio(pool_epoch_fee, state.pending_total_fee_usd);
+
             let mint_amount = ratio * config.mint_per_epoch_maker_amount; // Compute the mint amount based on the ratio
+
             POOL_MINT_AMOUNT.save(deps.storage, (&pair, epoch), &mint_amount)?;
         }
+
         POOL_FEE.clear(deps.storage);
-        // config.epoch += 1;
-        config.pending_total_fee = Uint128::zero();
-        // config.last_update_timestamp = config.last_update_timestamp + TWENTY_FOUR_SECONDS;
-        save_config(deps.storage, &config)?;
-        Ok(Response::default())
+
+        state.pending_total_fee_usd = Uint128::zero();
+        save_state(deps.storage, &state)?;
+
+        Ok(Response::new())
     }
 }
 
@@ -259,6 +268,7 @@ pub mod execute {
 pub fn query(deps: Deps<SeiQueryWrapper>, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::GetConfig {} => to_binary(&query::get_config(deps)?),
+        QueryMsg::GetPendingTotalFee {} => to_binary(&query::get_pending_fee(deps)?),
         QueryMsg::GetPoolAllowedMintAmount {
             base_denom,
             price_denom,
@@ -272,23 +282,39 @@ pub fn query(deps: Deps<SeiQueryWrapper>, _env: Env, msg: QueryMsg) -> StdResult
             end_epoch,
         )?),
         QueryMsg::GetTotalSupply {} => to_binary(&query::get_total_supply(deps)?),
+        QueryMsg::GetEpochTotalFeeAmount {
+            start_epoch,
+            end_epoch,
+        } => to_binary(&query::get_epoch_total_fee(deps, start_epoch, end_epoch)?),
     }
 }
 
 pub mod query {
 
     use super::*;
-    use crate::state::{load_config, POOL_MINT_AMOUNT};
-    use axis_protocol::axis::{ConfigResponse, PoolAllowedMintAmountResponse, TotalSupplyResponse};
+    use crate::state::{load_config, load_state, EPOCH_TOTAL_FEE_AMOUNT, POOL_MINT_AMOUNT};
+    use axis_protocol::axis::{
+        ConfigResponse, EpochTotalFeeAmountResponse, PendingFeeResponse,
+        PoolAllowedMintAmountResponse, TotalSupplyResponse,
+    };
     use cosmwasm_std::Order;
     use cw_storage_plus::Bound;
+
     pub fn get_config(deps: Deps<SeiQueryWrapper>) -> StdResult<ConfigResponse> {
         let config = load_config(deps.storage)?;
+
         Ok(ConfigResponse {
             core_contract: config.core_contract.to_string(),
             axis_denom: config.axis_denom.to_string(),
-            pending_total_fee: config.pending_total_fee,
-            mint_amount_per_epoch: config.mint_per_epoch_maker_amount,
+            mint_per_epoch_maker_amount: config.mint_per_epoch_maker_amount,
+            mint_per_epoch_trader_amount: config.mint_per_epoch_trader_amount,
+        })
+    }
+
+    pub fn get_pending_fee(deps: Deps<SeiQueryWrapper>) -> StdResult<PendingFeeResponse> {
+        let state = load_state(deps.storage)?;
+        Ok(PendingFeeResponse {
+            pending_total_fee: state.pending_total_fee_usd,
         })
     }
 
@@ -298,22 +324,27 @@ pub mod query {
         price_denom: String,
         start_epoch: u64,
         end_epoch: u64,
-    ) -> StdResult<PoolAllowedMintAmountResponse> {
+    ) -> StdResult<Vec<PoolAllowedMintAmountResponse>> {
         let key = format!("{}:{}", base_denom, price_denom);
-        let allow_mint_amounts = POOL_MINT_AMOUNT
+        let allow_mint_amounts: Vec<PoolAllowedMintAmountResponse> = POOL_MINT_AMOUNT
             .prefix(&key)
             .range(
                 deps.storage,
                 Some(Bound::inclusive(start_epoch)),
-                Some(Bound::exclusive(end_epoch)),
+                Some(Bound::inclusive(end_epoch)),
                 Order::Ascending,
             )
-            .collect::<StdResult<Vec<(u64, Uint128)>>>()?;
+            .filter_map(|item| match item {
+                Ok((epoch, mint_amount)) => {
+                    Some(PoolAllowedMintAmountResponse { epoch, mint_amount })
+                }
+                Err(_) => None,
+            })
+            .collect();
 
-        Ok(PoolAllowedMintAmountResponse {
-            mint_amount: allow_mint_amounts,
-        })
+        Ok(allow_mint_amounts)
     }
+
     pub fn get_total_supply(deps: Deps<SeiQueryWrapper>) -> StdResult<TotalSupplyResponse> {
         let config = load_config(deps.storage)?;
         let coin = deps.querier.query_supply(config.axis_denom)?;
@@ -321,6 +352,27 @@ pub mod query {
             denom: coin.denom,
             total_supply: coin.amount,
         })
+    }
+
+    pub fn get_epoch_total_fee(
+        deps: Deps<SeiQueryWrapper>,
+        start_epoch: u64,
+        end_epoch: u64,
+    ) -> StdResult<Vec<EpochTotalFeeAmountResponse>> {
+        let result: Vec<EpochTotalFeeAmountResponse> = EPOCH_TOTAL_FEE_AMOUNT
+            .range(
+                deps.storage,
+                Some(Bound::inclusive(start_epoch)),
+                Some(Bound::inclusive(end_epoch)),
+                Order::Ascending,
+            )
+            .filter_map(|item| match item {
+                Ok((epoch, amount)) => Some(EpochTotalFeeAmountResponse { epoch, amount }),
+                Err(_) => None,
+            })
+            .collect();
+
+        Ok(result)
     }
 }
 
