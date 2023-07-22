@@ -2,20 +2,20 @@
 use cosmwasm_std::entry_point;
 use cosmwasm_std::{
     to_binary, Addr, Binary, Deps, DepsMut, Env, MessageInfo, Reply, Response, StdResult, SubMsg,
-    SubMsgResult, WasmMsg,
+    SubMsgResult, Timestamp, WasmMsg,
 };
 use cw2::set_contract_version;
-use sei_cosmwasm::{SeiMsg, SeiQueryWrapper};
+use sei_cosmwasm::{EpochResponse, SeiMsg, SeiQuerier, SeiQueryWrapper};
 
 use crate::error::ContractError;
 
 use crate::helpers::find_attribute_value;
 use crate::state::{
-    load_config, register_axis_contract, register_pair_pool_contract, Config, CONFIG,
+    load_config, register_axis_contract, register_pair_pool_contract, save_config, Config, CONFIG,
     PAIR_MARKET_CONTRACT, PAIR_POOL, PAIR_POOL_LP_STAKING_CONTRACT,
 };
 use axis_protocol::axis::InstantiateMsg as AxisInstantiateMsg;
-use axis_protocol::core::{ConfigResponse, ExecuteMsg, InstantiateMsg, QueryMsg};
+use axis_protocol::core::{ConfigResponse, ExecuteMsg, InstantiateMsg, QueryMsg, SudoMsg};
 use axis_protocol::pool::{
     ConfigResponse as PoolConfigReponse, ExecuteMsg as PoolExecuteMsg,
     InstantiateMsg as PoolInstantiateMsg, QueryMsg as PoolQueryMsg,
@@ -33,6 +33,9 @@ pub fn instantiate(
     msg: InstantiateMsg,
 ) -> Result<Response<SeiMsg>, ContractError> {
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
+    // let querier = SeiQuerier::new(&deps.querier);
+    // let epoch = querier.query_epoch()?.epoch.current_epoch;
+
     let config = Config {
         owner: info.sender.clone(),
         epoch: 0,
@@ -40,6 +43,7 @@ pub fn instantiate(
         axis_contract: Addr::unchecked(""),
         staking_contract: Addr::unchecked(""),
         vault_contract: Addr::unchecked(""),
+        next_update_timestamp: Timestamp::from_nanos(msg.next_update_timestamp),
     };
     CONFIG.save(deps.storage, &config)?;
     //@@axis instantiate
@@ -64,7 +68,7 @@ pub fn instantiate(
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn execute(
     deps: DepsMut<SeiQueryWrapper>,
-    _env: Env,
+    env: Env,
     info: MessageInfo,
     msg: ExecuteMsg,
 ) -> Result<Response<SeiMsg>, ContractError> {
@@ -86,7 +90,7 @@ pub fn execute(
             base_denom,
             price_denom,
         } => execute::pair_pool_un_lock(deps, info, base_denom, price_denom),
-        ExecuteMsg::Setting {} => execute::setting(deps, info),
+        ExecuteMsg::Setting {} => execute::setting(deps, env, info),
         ExecuteMsg::UpdateConfig {
             vault_contract,
             staking_contract,
@@ -101,7 +105,7 @@ pub mod execute {
     };
     use cosmwasm_std::{CosmosMsg, Order, SubMsg, WasmMsg};
 
-    use sei_cosmwasm::{SeiMsg, SeiQueryWrapper};
+    use sei_cosmwasm::{EpochResponse, SeiMsg, SeiQuerier, SeiQueryWrapper};
 
     use crate::{
         helpers::{check_denom_and_get_validate_denom, check_owner, check_valid_price},
@@ -242,14 +246,22 @@ pub mod execute {
     }
     pub fn setting(
         deps: DepsMut<SeiQueryWrapper>,
+        env: Env,
         info: MessageInfo,
     ) -> Result<Response<SeiMsg>, ContractError> {
         //Axis token setting
         //staking setting
         //vault setting
         //@@checking timestamp
+
         let mut config = load_config(deps.storage)?;
 
+        match config.next_update_timestamp <= env.block.time {
+            true => Ok(()),
+            false => Err(ContractError::InvalidEpoch {}),
+        }?;
+        // println!("vault contract = {:?}", config.vault_contract);
+        // println!("axis contract = {:?}", config.axis_contract);
         let axis_setting_msg = CosmosMsg::Wasm(WasmMsg::Execute {
             contract_addr: config.axis_contract.to_string(),
             msg: to_binary(&AxisExecuteMsg::Setting {})?,
@@ -265,8 +277,11 @@ pub mod execute {
             msg: to_binary(&StakingExecuteMsg::Setting {})?,
             funds: vec![],
         });
+
         config.epoch += 1;
+        config.next_update_timestamp = config.next_update_timestamp.plus_days(1);
         save_config(deps.storage, &config)?;
+        // println!("@@@@@@@@@@@@@@@@@");
         Ok(Response::new().add_messages(vec![
             axis_setting_msg,
             vault_setting_msg,
@@ -282,6 +297,7 @@ pub mod execute {
         let config = load_config(deps.storage)?;
         check_owner(&info.sender, &config.owner)?;
         let mut config = load_config(deps.storage)?;
+
         if let Some(staking_contract) = staking_contract {
             if config.staking_contract == Addr::unchecked("") {
                 config.staking_contract = deps.api.addr_validate(&staking_contract)?;
@@ -292,6 +308,7 @@ pub mod execute {
                 config.vault_contract = deps.api.addr_validate(&vault_contract)?;
             }
         }
+        save_config(deps.storage, &config)?;
         Ok(Response::new())
     }
 }
@@ -441,4 +458,26 @@ pub fn reply(
         },
         _ => Err(ContractError::InvalidReplyId {}),
     }
+}
+
+#[cfg_attr(not(feature = "library"), entry_point)]
+pub fn test_sudo(
+    deps: DepsMut<SeiQueryWrapper>,
+    _env: Env,
+    msg: SudoMsg,
+) -> Result<Response<SeiMsg>, ContractError> {
+    match msg {
+        SudoMsg::NewEpoch { epoch } => handle_new_epoch(deps, epoch),
+    }
+}
+
+pub fn handle_new_epoch(
+    deps: DepsMut<SeiQueryWrapper>,
+    epoch: u64,
+) -> Result<Response<SeiMsg>, ContractError> {
+    let mut config = load_config(deps.storage)?;
+    config.epoch = epoch;
+    println!("config!!!!!!!!{:?}", config);
+    save_config(deps.storage, &config)?;
+    Ok(Response::new())
 }

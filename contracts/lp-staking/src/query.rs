@@ -10,8 +10,8 @@ pub fn query_pool_mint_amounts(
     price_denom: &String,
     start_epoch: u64,
     end_epoch: u64,
-) -> StdResult<Vec<(u64, Uint128)>> {
-    let axis_res: PoolAllowedMintAmountResponse = querier.query_wasm_smart(
+) -> StdResult<Vec<PoolAllowedMintAmountResponse>> {
+    let axis_res: Vec<PoolAllowedMintAmountResponse> = querier.query_wasm_smart(
         axis_contract,
         &AxisQueryMsg::GetPoolAllowedMintAmount {
             base_denom: base_denom.to_owned(),
@@ -20,5 +20,6 @@ pub fn query_pool_mint_amounts(
             end_epoch,
         },
     )?;
-    Ok(axis_res.mint_amount)
+
+    Ok(axis_res)
 }

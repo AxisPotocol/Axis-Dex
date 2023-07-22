@@ -99,6 +99,7 @@ pub mod execute {
         let mut state = load_state(deps.storage)?;
         let axis_coin = check_funds_and_get_axis(info.funds, &config.axis_denom)?;
         let epoch = query_epoch(deps.querier, &config.core_contract)?;
+
         STAKING.update(
             deps.storage,
             info.sender,
@@ -125,8 +126,10 @@ pub mod execute {
                 }
             },
         )?;
+
         state.pending_staking_total += axis_coin.amount;
         save_state(deps.storage, &state)?;
+
         Ok(Response::new())
     }
 
@@ -175,12 +178,14 @@ pub mod execute {
             },
         )?;
 
-        state.staking_total -= withdraw_pending_amount;
+        state.staking_total -= state
+            .staking_total
+            .checked_sub(withdraw_pending_amount)
+            .unwrap_or_default();
 
         state.withdraw_pending_total += withdraw_pending_amount;
 
         save_state(deps.storage, &state)?;
-
         let claim_msg = CosmosMsg::Wasm(WasmMsg::Execute {
             contract_addr: config.es_axis_contract.to_string(),
             msg: to_binary(&ESAxisExecuteMsg::Claim {
@@ -189,7 +194,11 @@ pub mod execute {
             })?,
             funds: vec![],
         });
-        Ok(Response::new().add_message(claim_msg))
+
+        match ex_axis_amount.is_zero() {
+            true => Ok(Response::new()),
+            false => Ok(Response::new().add_message(claim_msg)),
+        }
     }
 
     pub fn withdraw(
@@ -202,32 +211,37 @@ pub mod execute {
         let epoch = query_epoch(deps.querier, &config.core_contract)?;
         let axis_amount: Uint128 = un_stakings
             .iter()
-            .filter(|stake| stake.unlock_epoch < epoch)
+            .filter(|stake| stake.unlock_epoch <= epoch)
             .fold(Uint128::zero(), |axis_amount, stake| {
                 axis_amount + stake.withdraw_pending_amount
             });
 
         let remaining_un_stakings = un_stakings
             .into_iter()
-            .filter(|un_stake| un_stake.unlock_epoch >= epoch)
+            .filter(|un_stake| un_stake.unlock_epoch > epoch)
             .collect::<Vec<UnStakeInfo>>();
+
         match remaining_un_stakings.len() {
             0 => UN_STAKING.remove(deps.storage, info.sender.clone()),
             _ => UN_STAKING.save(deps.storage, info.sender.clone(), &remaining_un_stakings)?,
         }
 
         state.withdraw_pending_total -= axis_amount;
+
         save_state(deps.storage, &state)?;
+        match axis_amount.is_zero() {
+            true => Ok(Response::new()),
+            false => {
+                let axis_token = coin(axis_amount.into(), config.axis_denom);
 
-        let axis_token = coin(axis_amount.into(), config.axis_denom);
+                let axis_send_msg = SubMsg::new(BankMsg::Send {
+                    to_address: info.sender.to_string(),
+                    amount: vec![axis_token],
+                });
 
-        let axis_send_msg = SubMsg::new(BankMsg::Send {
-            to_address: info.sender.to_string(),
-            amount: vec![axis_token],
-        });
-        //axis_token 은 보내주고, es_axis 는 민트 wasm
-
-        Ok(Response::new().add_submessage(axis_send_msg))
+                Ok(Response::new().add_submessage(axis_send_msg))
+            }
+        }
     }
 
     pub fn claim_reward(
@@ -264,23 +278,42 @@ pub mod execute {
         deps: DepsMut<SeiQueryWrapper>,
         info: MessageInfo,
     ) -> Result<Response<SeiMsg>, ContractError> {
+        // Load the configuration and state
         let config = load_config(deps.storage)?;
         let mut state = load_state(deps.storage)?;
-        check_core_contract(&config.core_contract, &info.sender)?;
-        let epoch = query_epoch(deps.querier, &config.core_contract)? - 1;
-        EPOCH_STAKING_AMOUNT.save(deps.storage, epoch, &state.staking_total)?;
 
+        // Check if the sender is the core contract
+        check_core_contract(&config.core_contract, &info.sender)?;
+
+        // Get the current epoch
+        let current_epoch = query_epoch(deps.querier, &config.core_contract)? - 1;
+
+        // Save the total staking amount for the current epoch
+        EPOCH_STAKING_AMOUNT.save(deps.storage, current_epoch, &state.staking_total)?;
+
+        // Update the total staking amount and reset the pending staking total
+        let is_init = state.staking_total.is_zero();
         state.staking_total += state.pending_staking_total;
         state.pending_staking_total = Uint128::zero();
+
         save_state(deps.storage, &state)?;
-        //mint msg
+
+        // If the stake total is zero, return an empty response
+        if is_init {
+            return Ok(Response::new());
+        }
+
+        // Otherwise, create a mint message
+        let mint_msg = to_binary(&ESAxisExecuteMsg::Mint {
+            amount: ONE_DAY_PER_MINT.into(),
+        })?;
+
         let wasm_msg = CosmosMsg::Wasm(WasmMsg::Execute {
             contract_addr: config.es_axis_contract.to_string(),
-            msg: to_binary(&ESAxisExecuteMsg::Mint {
-                amount: ONE_DAY_PER_MINT.into(),
-            })?,
+            msg: mint_msg,
             funds: vec![],
         });
+
         Ok(Response::new().add_message(wasm_msg))
     }
 }
@@ -319,6 +352,7 @@ pub mod query {
             es_axis_contract: config.es_axis_contract,
         })
     }
+
     pub fn get_state(deps: Deps<SeiQueryWrapper>) -> StdResult<StateResponse> {
         let state = load_state(deps.storage)?;
         Ok(StateResponse {
@@ -327,12 +361,14 @@ pub mod query {
             staking_total: state.staking_total,
         })
     }
+
     pub fn get_stake_info(
         deps: Deps<SeiQueryWrapper>,
         addr: String,
     ) -> StdResult<StakeInfoResponse> {
         let staker = deps.api.addr_validate(&addr)?;
         let stakings = load_stakings(deps.storage, staker)?;
+
         let stakings_response = stakings
             .into_iter()
             .map(|stake| StakeResponse {
@@ -340,10 +376,12 @@ pub mod query {
                 staking_amount: stake.staking_amount,
             })
             .collect();
+
         Ok(StakeInfoResponse {
             stake_infos: stakings_response,
         })
     }
+
     pub fn get_unstake_info(
         deps: Deps<SeiQueryWrapper>,
         addr: String,
@@ -361,12 +399,14 @@ pub mod query {
             un_stake_infos: un_stakings_response,
         })
     }
+
     pub fn get_available_claim_reward(
         deps: Deps<SeiQueryWrapper>,
         addr: String,
     ) -> StdResult<Uint128> {
         let config = load_config(deps.storage)?;
         let epoch = query_epoch(deps.querier, &config.core_contract)?;
+
         let staker = deps.api.addr_validate(&addr)?;
         let stakings = load_stakings(deps.storage, staker)?;
         let ex_axis_amount: Uint128 = stakings

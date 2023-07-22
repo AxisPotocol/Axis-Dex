@@ -185,14 +185,17 @@ pub mod execute {
     ) -> Result<Response<SeiMsg>, ContractError> {
         // check core contract
         // pending -> balance 로 이동
+
         let config = load_config(deps.storage)?;
         check_core_contract(&config.core_contract, &info.sender)?;
+
         for denom in config.denom_list.iter() {
             let pending_balance = load_pending_balance(deps.storage, denom)?;
             let mut balance = load_balance(deps.storage, denom)?;
             balance += pending_balance;
             save_balance(deps.storage, denom, &balance)?;
         }
+
         PENDING_BALANCE.clear(deps.storage);
 
         Ok(Response::new())

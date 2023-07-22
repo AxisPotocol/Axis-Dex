@@ -36,7 +36,7 @@ pub fn compute_mint_amount(
         &config.base_denom,
         &config.price_denom,
         start_epoch,
-        now_epoch,
+        now_epoch - 1,
     )?;
     let stake_ratio = EPOCH_STAKING_TOTAL_AMOUNT
         .range(
@@ -57,9 +57,8 @@ pub fn compute_mint_amount(
     let staker_mint_amount = mint_amounts
         .into_iter()
         .zip(stake_ratio.into_iter())
-        .map(|((mint_epoch, mint_amount), (epoch, ratio))| Ok(mint_amount * ratio))
+        .map(|(item, (_, ratio))| Ok(item.mint_amount * ratio))
         .sum::<StdResult<Uint128>>()?;
 
     Ok(staker_mint_amount)
-    // Ok(total)
 }

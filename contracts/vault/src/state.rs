@@ -25,7 +25,11 @@ pub fn save_balance(storage: &mut dyn Storage, denom: &String, balance: &Uint128
     BALANCE.save(storage, denom, balance)
 }
 pub fn load_balance(storage: &dyn Storage, denom: &String) -> StdResult<Uint128> {
-    BALANCE.load(storage, denom)
+    match BALANCE.may_load(storage, denom) {
+        Ok(Some(balance)) => Ok(balance),
+        Ok(None) => Ok(Uint128::zero()),
+        Err(e) => Err(e),
+    }
 }
 pub const PENDING_BALANCE: Map<&str, Uint128> = Map::new("pending_balance");
 pub fn save_pending_balance(
@@ -36,6 +40,10 @@ pub fn save_pending_balance(
     PENDING_BALANCE.save(storage, denom, balance)
 }
 pub fn load_pending_balance(storage: &dyn Storage, denom: &String) -> StdResult<Uint128> {
-    PENDING_BALANCE.load(storage, denom)
+    match PENDING_BALANCE.may_load(storage, denom) {
+        Ok(Some(balance)) => Ok(balance),
+        Ok(None) => Ok(Uint128::zero()),
+        Err(e) => Err(e),
+    }
 }
 pub const CONFIG: Item<Config> = Item::new("valut_config");

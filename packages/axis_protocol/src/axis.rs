@@ -14,7 +14,7 @@ pub enum ExecuteMsg {
     AddFeeAmount {
         base_denom: String,
         price_denom: String,
-        trader: String,
+        trader: Addr,
         fee_usd_amount: Uint128,
     },
     Setting {},
@@ -36,6 +36,8 @@ pub enum ExecuteMsg {
 pub enum QueryMsg {
     #[returns(ConfigResponse)]
     GetConfig {},
+    #[returns(PendingFeeResponse)]
+    GetPendingTotalFee {},
     #[returns(PoolAllowedMintAmountResponse)]
     GetPoolAllowedMintAmount {
         base_denom: String,
@@ -45,22 +47,35 @@ pub enum QueryMsg {
     },
     #[returns(TotalSupplyResponse)]
     GetTotalSupply {},
+    #[returns(Vec<EpochTotalFeeAmountResponse>)]
+    GetEpochTotalFeeAmount { start_epoch: u64, end_epoch: u64 },
 }
 
 #[cw_serde]
 pub struct ConfigResponse {
     pub core_contract: String,
     pub axis_denom: String,
+    pub mint_per_epoch_maker_amount: Uint128,
+    pub mint_per_epoch_trader_amount: Uint128,
+}
+#[cw_serde]
+pub struct PendingFeeResponse {
     pub pending_total_fee: Uint128,
-    pub mint_amount_per_epoch: Uint128,
 }
 #[cw_serde]
 pub struct PoolAllowedMintAmountResponse {
-    pub mint_amount: Vec<(u64, Uint128)>,
+    pub mint_amount: Uint128,
+    pub epoch: u64,
 }
 
 #[cw_serde]
 pub struct TotalSupplyResponse {
     pub denom: String,
     pub total_supply: Uint128,
+}
+
+#[cw_serde]
+pub struct EpochTotalFeeAmountResponse {
+    pub epoch: u64,
+    pub amount: Uint128,
 }

@@ -5,6 +5,7 @@ use cosmwasm_std::Addr;
 pub struct InstantiateMsg {
     pub accept_price_denoms: Vec<String>,
     pub axis_code_id: u64,
+    pub next_update_timestamp: u64,
 }
 
 #[cw_serde]
@@ -54,7 +55,10 @@ pub enum QueryMsg {
         price_denom: String,
     },
 }
-
+#[cw_serde]
+pub enum SudoMsg {
+    NewEpoch { epoch: u64 },
+}
 #[cw_serde]
 pub struct ConfigResponse {
     pub owner: Addr,

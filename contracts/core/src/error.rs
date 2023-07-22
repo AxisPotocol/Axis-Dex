@@ -9,6 +9,8 @@ pub enum ContractError {
     #[error("Unauthorized")]
     Unauthorized {},
 
+    #[error("Invalid Epoch")]
+    InvalidEpoch {},
     #[error("Invalid Price Denom")]
     InvalidPrice {},
 

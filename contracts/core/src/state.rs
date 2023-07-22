@@ -1,6 +1,6 @@
 use cosmwasm_schema::cw_serde;
 
-use cosmwasm_std::{Addr, StdResult, Storage, Uint128};
+use cosmwasm_std::{Addr, StdResult, Storage, Timestamp, Uint128};
 use cw_storage_plus::{Item, Map};
 
 use crate::ContractError;
@@ -13,6 +13,7 @@ pub struct Config {
     pub axis_contract: Addr,
     pub staking_contract: Addr,
     pub vault_contract: Addr,
+    pub next_update_timestamp: Timestamp,
 }
 
 pub fn save_config(storage: &mut dyn Storage, config: &Config) -> StdResult<()> {

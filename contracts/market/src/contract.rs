@@ -121,7 +121,7 @@ pub mod execute {
     };
     use cosmwasm_std::{coin, BankMsg, CosmosMsg, Uint128, WasmMsg};
 
-    use sei_cosmwasm::SeiQueryWrapper;
+    use sei_cosmwasm::{EpochResponse, SeiQuerier, SeiQueryWrapper};
 
     use super::*;
 
@@ -263,7 +263,7 @@ pub mod execute {
                 msg: to_binary(&AxisExecuteMsg::AddFeeAmount {
                     base_denom: config.base_denom,
                     price_denom: config.price_denom,
-                    trader: info.sender.to_string(),
+                    trader: info.sender,
                     fee_usd_amount: fee_usd.to_uint_ceil(),
                 })?,
                 funds: vec![],
@@ -359,7 +359,7 @@ pub mod execute {
             msg: to_binary(&AxisExecuteMsg::AddFeeAmount {
                 base_denom: config.base_denom,
                 price_denom: config.price_denom,
-                trader: trader.to_string(),
+                trader: trader.to_owned(),
                 fee_usd_amount: fee_usd.to_uint_ceil(),
             })?,
             funds: vec![],

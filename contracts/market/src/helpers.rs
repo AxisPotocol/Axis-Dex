@@ -66,7 +66,6 @@ pub fn get_liquidation_price(
     check_collateral_value(collateral_usd, MINIMUM_USD_VALUE)?;
 
     let fee_usd = get_usd_amount(open_fee_amount, collateral_decimal, collateral_price)?;
-    println!("open_fee_amount = {:?}", open_fee_amount);
 
     let leverage_dec =
         Decimal::from_atomics(leverage, 0).map_err(|_| ContractError::ConvertError {})?;

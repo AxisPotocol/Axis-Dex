@@ -77,12 +77,13 @@ pub mod execute {
         let config = load_config(deps.storage)?;
         check_staking_contract(&info.sender, &config)?;
 
-        let es_axis_token = coin(amount.into(), "es_AXIS");
+        let es_axis_token = coin(amount.into(), config.es_axis_denom);
 
         let send_msg = SubMsg::new(BankMsg::Send {
             to_address: sender.to_string(),
             amount: vec![es_axis_token],
         });
+
         Ok(Response::new().add_submessage(send_msg))
     }
     pub fn mint(
@@ -150,5 +151,5 @@ pub mod query {
     }
 }
 
-#[cfg(test)]
-mod tests {}
+// #[cfg(test)]
+// mod tests {}
