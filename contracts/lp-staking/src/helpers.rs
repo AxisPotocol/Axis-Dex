@@ -43,18 +43,16 @@ pub fn compute_mint_amount(
         &config.base_denom,
         &config.price_denom,
         start_epoch,
-        now_epoch - 1,
     )?;
     let stake_ratio = EPOCH_STAKING_TOTAL_AMOUNT
         .range(
             deps.storage,
             Some(Bound::inclusive(start_epoch)),
-            Some(Bound::inclusive(now_epoch)),
+            None,
             Order::Ascending,
         )
         .into_iter()
         .map(|data| {
-            println!("{:?}", data);
             let (key, total) = data?;
             let ratio = Decimal::from_ratio(staking_amount, total);
             Ok((key, ratio))

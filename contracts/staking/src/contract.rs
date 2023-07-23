@@ -254,19 +254,25 @@ pub mod execute {
         let config = load_config(deps.storage)?;
         let mut stakings = load_stakings(deps.storage, info.sender.clone())?;
         let mut claim_es_axis_amount = Uint128::zero();
-        let epoch = query_epoch(deps.querier, &config.core_contract)?;
+        let state = load_state(deps.storage)?;
+
         for stake in stakings.iter_mut() {
-            if stake.start_epoch == epoch {
+            if stake.start_epoch >= state.epoch {
                 continue;
             }
 
-            let reward =
-                compute_mint_amount(deps.storage, stake.staking_amount, stake.start_epoch, epoch)?;
-            stake.start_epoch = epoch;
+            let reward = compute_mint_amount(
+                deps.storage,
+                stake.staking_amount,
+                stake.start_epoch,
+                state.epoch,
+            )?;
+
+            stake.start_epoch = state.epoch;
             claim_es_axis_amount += reward;
         }
 
-        let wasm_msg = CosmosMsg::Wasm(WasmMsg::Execute {
+        let claim_msg = CosmosMsg::Wasm(WasmMsg::Execute {
             contract_addr: config.es_axis_contract.to_string(),
             msg: to_binary(&ESAxisExecuteMsg::Claim {
                 sender: info.sender,
@@ -274,7 +280,7 @@ pub mod execute {
             })?,
             funds: vec![],
         });
-        Ok(Response::new().add_message(wasm_msg))
+        Ok(Response::new().add_message(claim_msg))
     }
 
     pub fn setting(
@@ -309,17 +315,16 @@ pub mod execute {
         }
 
         // Otherwise, create a mint message
-        let mint_msg = to_binary(&ESAxisExecuteMsg::Mint {
-            amount: ONE_DAY_PER_MINT.into(),
-        })?;
 
-        let wasm_msg = CosmosMsg::Wasm(WasmMsg::Execute {
+        let mint_msg = CosmosMsg::Wasm(WasmMsg::Execute {
             contract_addr: config.es_axis_contract.to_string(),
-            msg: mint_msg,
+            msg: to_binary(&ESAxisExecuteMsg::Mint {
+                amount: ONE_DAY_PER_MINT.into(),
+            })?,
             funds: vec![],
         });
 
-        Ok(Response::new().add_message(wasm_msg))
+        Ok(Response::new().add_message(mint_msg))
     }
 }
 

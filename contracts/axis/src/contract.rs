@@ -281,13 +281,11 @@ pub fn query(deps: Deps<SeiQueryWrapper>, _env: Env, msg: QueryMsg) -> StdResult
             base_denom,
             price_denom,
             start_epoch,
-            end_epoch,
         } => to_binary(&query::get_pool_allowed_mint_amount(
             deps,
             base_denom,
             price_denom,
             start_epoch,
-            end_epoch,
         )?),
         QueryMsg::GetTotalSupply {} => to_binary(&query::get_total_supply(deps)?),
         QueryMsg::GetEpochTotalFeeAmount {
@@ -331,7 +329,6 @@ pub mod query {
         base_denom: String,
         price_denom: String,
         start_epoch: u64,
-        end_epoch: u64,
     ) -> StdResult<Vec<PoolAllowedMintAmountResponse>> {
         let key = format!("{}:{}", base_denom, price_denom);
         let allow_mint_amounts: Vec<PoolAllowedMintAmountResponse> = POOL_MINT_AMOUNT
@@ -339,7 +336,7 @@ pub mod query {
             .range(
                 deps.storage,
                 Some(Bound::inclusive(start_epoch)),
-                Some(Bound::inclusive(end_epoch)),
+                None,
                 Order::Ascending,
             )
             .filter_map(|item| match item {

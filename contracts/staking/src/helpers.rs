@@ -32,7 +32,7 @@ pub fn compute_mint_amount(
         .range(
             storage,
             Some(Bound::inclusive(start)),
-            Some(Bound::exclusive(now)),
+            None,
             Order::Ascending,
         )
         .into_iter()

@@ -263,7 +263,7 @@ pub mod execute {
             true => Ok(()),
             false => Err(ContractError::InvalidEpoch {}),
         }?;
-
+        config.epoch += 1;
         config.next_update_timestamp = config.next_update_timestamp.plus_days(1);
         save_config(deps.storage, &config)?;
 
