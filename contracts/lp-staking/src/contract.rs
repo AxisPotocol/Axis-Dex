@@ -53,7 +53,7 @@ pub fn instantiate(
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn execute(
     deps: DepsMut<SeiQueryWrapper>,
-    env: Env,
+    _env: Env,
     info: MessageInfo,
     msg: ExecuteMsg,
 ) -> Result<Response<SeiMsg>, ContractError> {
@@ -71,12 +71,12 @@ mod execute {
     use crate::{
         helpers::{check_core_contract, check_funds_and_get_lp, compute_mint_amount},
         state::{
-            load_config, load_stakings, load_state, load_un_stakings, save_config, save_state,
-            StakeInfo, State, UnStakeInfo, EPOCH_STAKING_TOTAL_AMOUNT, STAKING, STATE, UN_STAKING,
+            load_config, load_stakings, load_state, load_un_stakings, save_state, StakeInfo,
+            UnStakeInfo, EPOCH_STAKING_TOTAL_AMOUNT, STAKING, UN_STAKING,
         },
         ContractError,
     };
-    use axis_protocol::{axis::ExecuteMsg as AxisExecuteMsg, query::query_epoch};
+    use axis_protocol::axis::ExecuteMsg as AxisExecuteMsg;
     use cosmwasm_std::{
         coin, to_binary, BankMsg, CosmosMsg, DepsMut, MessageInfo, Response, StdResult, SubMsg,
         Uint128, WasmMsg,
@@ -276,7 +276,7 @@ mod execute {
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn query(deps: Deps<SeiQueryWrapper>, env: Env, msg: QueryMsg) -> StdResult<Binary> {
+pub fn query(deps: Deps<SeiQueryWrapper>, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::GetConfig {} => to_binary(&query::get_config(deps)?),
         QueryMsg::GetState {} => to_binary(&query::get_state(deps)?),

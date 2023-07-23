@@ -1,4 +1,4 @@
-use cosmwasm_std::{coin, Attribute, BankMsg, Coin, CosmosMsg, Decimal, Storage, Uint128};
+use cosmwasm_std::{coin, BankMsg, Coin, CosmosMsg, Decimal, Storage, Uint128};
 use sei_cosmwasm::SeiMsg;
 
 use crate::{

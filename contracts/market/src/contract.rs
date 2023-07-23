@@ -5,7 +5,7 @@ use axis_protocol::vault::ExecuteMsg as VaultExecuteMsg;
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
 use cosmwasm_std::{
-    to_binary, Addr, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, Uint128,
+    to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, Uint128,
 };
 use cw2::set_contract_version;
 use sei_cosmwasm::{SeiMsg, SeiQueryWrapper};
@@ -121,7 +121,7 @@ pub mod execute {
     };
     use cosmwasm_std::{coin, BankMsg, CosmosMsg, Uint128, WasmMsg};
 
-    use sei_cosmwasm::{EpochResponse, SeiQuerier, SeiQueryWrapper};
+    use sei_cosmwasm::SeiQueryWrapper;
 
     use super::*;
 

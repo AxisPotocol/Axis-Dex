@@ -1,6 +1,6 @@
 use axis_protocol::axis::{PoolAllowedMintAmountResponse, QueryMsg as AxisQueryMsg};
 
-use cosmwasm_std::{Addr, QuerierWrapper, StdResult, Uint128};
+use cosmwasm_std::{Addr, QuerierWrapper, StdResult};
 use sei_cosmwasm::SeiQueryWrapper;
 
 pub fn query_pool_mint_amounts(

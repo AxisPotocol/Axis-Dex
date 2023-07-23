@@ -17,7 +17,9 @@ pub enum ExecuteMsg {
         trader: Addr,
         fee_usd_amount: Uint128,
     },
-    Setting {},
+    Setting {
+        epoch: u64,
+    },
     ClaimMintTrader {},
     ClaimMintMaker {
         base_denom: String,

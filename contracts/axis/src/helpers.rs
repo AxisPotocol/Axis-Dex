@@ -1,9 +1,4 @@
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
-
-use cosmwasm_std::{
-    to_binary, Addr, CosmosMsg, CustomQuery, Querier, QuerierWrapper, StdResult, WasmMsg, WasmQuery,
-};
+use cosmwasm_std::Addr;
 
 use crate::error::ContractError;
 

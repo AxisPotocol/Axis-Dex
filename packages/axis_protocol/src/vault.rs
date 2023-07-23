@@ -18,7 +18,9 @@ pub enum ExecuteMsg {
         price_amount: Uint128,
     },
     Swap {},
-    Setting {},
+    Setting {
+        epoch: u64,
+    },
 }
 
 #[cw_serde]

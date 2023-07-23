@@ -8,9 +8,9 @@ use cw2::set_contract_version;
 use sei_cosmwasm::{SeiMsg, SeiQueryWrapper};
 
 use crate::error::ContractError;
-use crate::helpers::{find_attribute_value, register_es_axis};
+use crate::helpers::register_es_axis;
 use crate::query::query_epoch;
-use crate::state::{save_config, save_state, Config, State, CONFIG};
+use crate::state::{save_config, save_state, Config, State};
 use axis_protocol::es_axis::{
     ExecuteMsg as ESAxisExecuteMsg, InstantiateMsg as ESAxisInstantiateMsg,
 };
@@ -87,8 +87,8 @@ pub mod execute {
     use crate::{
         helpers::{check_core_contract, check_funds_and_get_axis, compute_mint_amount},
         state::{
-            load_config, load_stakings, load_state, load_un_stakings, save_config, save_state,
-            StakeInfo, UnStakeInfo, EPOCH_STAKING_AMOUNT, STAKING, UN_STAKING,
+            load_config, load_stakings, load_state, load_un_stakings, save_state, StakeInfo,
+            UnStakeInfo, EPOCH_STAKING_AMOUNT, STAKING, UN_STAKING,
         },
     };
 

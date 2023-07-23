@@ -16,6 +16,7 @@ pub enum ExecuteMsg {
     ClaimReward {},
     UnStaking {},
     Withdraw {},
+    Setting { epoch: u64 },
 }
 
 #[cw_serde]
@@ -23,6 +24,14 @@ pub enum ExecuteMsg {
 pub enum QueryMsg {
     #[returns(ConfigResponse)]
     GetConfig {},
+    #[returns(StateResponse)]
+    GetState {},
+    #[returns(Vec<StakeInfoResponse>)]
+    GetStakeInfo { address: Addr },
+    #[returns(Vec<UnStakeInfoResponse>)]
+    GetUnstakeInfo { address: Addr },
+    #[returns(EpochTotalStakingResponse)]
+    GetEpochTotalStaking { start_epoch: u64, end_epoch: u64 },
 }
 
 #[cw_serde]
@@ -33,4 +42,28 @@ pub struct ConfigResponse {
     pub base_denom: String,
     pub price_denom: String,
     pub staking_total: Uint128,
+}
+
+#[cw_serde]
+pub struct StateResponse {
+    pub staking_total: Uint128,
+    pub withdraw_pending_total: Uint128,
+}
+
+#[cw_serde]
+pub struct EpochTotalStakingResponse {
+    pub epoch: u64,
+    pub amount: Uint128,
+}
+
+#[cw_serde]
+pub struct StakeInfoResponse {
+    pub start_epoch: u64,
+    pub staking_amount: Uint128,
+}
+
+#[cw_serde]
+pub struct UnStakeInfoResponse {
+    pub unlock_epoch: u64,
+    pub unstaking_amount: Uint128,
 }

@@ -3,8 +3,6 @@ use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{Addr, Decimal, StdResult, Storage, Uint128};
 use cw_storage_plus::Item;
 
-use crate::position::Position;
-
 //@@Config
 #[cw_serde]
 pub struct Config {

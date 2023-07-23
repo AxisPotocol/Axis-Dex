@@ -1,6 +1,6 @@
 use cosmwasm_schema::cw_serde;
 
-use cosmwasm_std::{Addr, StdResult, Storage, Timestamp, Uint128};
+use cosmwasm_std::{Addr, StdResult, Storage, Timestamp};
 use cw_storage_plus::{Item, Map};
 
 use crate::ContractError;

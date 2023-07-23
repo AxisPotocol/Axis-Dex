@@ -7,18 +7,15 @@ use cosmwasm_std::{
 };
 use cw2::set_contract_version;
 
-use axis_protocol::{
-    core::ExecuteMsg as CoreExecuteMsg,
-    pool::{ExecuteMsg, InstantiateMsg, QueryMsg},
-};
+use axis_protocol::pool::{ExecuteMsg, InstantiateMsg, QueryMsg};
 use sei_cosmwasm::{SeiMsg, SeiQueryWrapper};
 
-use crate::{error::ContractError, state::load_pool};
+use crate::error::ContractError;
 
 use crate::helpers::check::check_funds_and_get_funds;
 
 use crate::helpers::calculate_lp_mint_amount;
-use crate::state::{load_config, register_market_contract, save_config, save_pool, Config, Pool};
+use crate::state::{load_config, save_config, save_pool, Config, Pool};
 
 // version info for migration info
 const CONTRACT_NAME: &str = "crates.io:pool";
@@ -178,7 +175,8 @@ pub mod execute {
         state::{load_config, load_pool},
     };
 
-    use cosmwasm_std::{coin, BankMsg, CosmosMsg, Decimal, Uint128};
+    use cosmwasm_std::CosmosMsg;
+    use cosmwasm_std::{coin, BankMsg, Uint128};
 
     use sei_cosmwasm::SeiMsg;
 

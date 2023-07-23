@@ -1,6 +1,4 @@
-use cosmwasm_std::{
-    Addr, Coin, Decimal, DepsMut, Order, QuerierWrapper, StdResult, Storage, Uint128,
-};
+use cosmwasm_std::{Addr, Coin, Decimal, DepsMut, Order, StdResult, Uint128};
 use cw_storage_plus::Bound;
 use sei_cosmwasm::SeiQueryWrapper;
 

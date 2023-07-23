@@ -1,8 +1,7 @@
 use axis_protocol::core::{
-    ConfigResponse as CoreConfigRepsonse, PairLpStakingContractResponse,
-    PairMarketContractResponse, PairPoolContractResponse, QueryMsg as CoreQueryMsg,
+    PairLpStakingContractResponse, PairMarketContractResponse, QueryMsg as CoreQueryMsg,
 };
-use axis_protocol::pool::{ConfigResponse as PoolConfigResponse, QueryMsg as PoolQueryMsg};
+
 use cosmwasm_std::{Addr, QuerierWrapper};
 use sei_cosmwasm::SeiQueryWrapper;
 

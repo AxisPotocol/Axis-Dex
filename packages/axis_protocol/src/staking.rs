@@ -10,7 +10,7 @@ pub struct InstantiateMsg {
 
 #[cw_serde]
 pub enum ExecuteMsg {
-    Setting {},
+    Setting { epoch: u64 },
     Staking {},
     ClaimReward {},
     UnStaking {},
@@ -44,6 +44,7 @@ pub struct StateResponse {
     pub pending_staking_total: Uint128,
     pub withdraw_pending_total: Uint128,
     pub staking_total: Uint128,
+    pub epoch: u64,
 }
 #[cw_serde]
 pub struct UnStakeResponse {

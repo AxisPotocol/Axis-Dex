@@ -103,6 +103,7 @@ fn test_claim_minting_trader() {
     app.update_block(|block| block.time = block.time.plus_days(1));
     //epoch is 1
     let setting_result = setting(&mut app, &core_contract, &admin);
+
     assert!(setting_result.is_ok());
 
     //@@Valid
@@ -112,7 +113,7 @@ fn test_claim_minting_trader() {
         &ExecuteMsg::ClaimMintTrader {},
         &vec![],
     );
-
+    println!("claim_mint_trader_result = {:?}", claim_mint_trader_result);
     assert!(claim_mint_trader_result.is_ok());
 
     let axis_config_res: ConfigResponse = app
@@ -237,7 +238,9 @@ pub fn test_claim_minting_maker() {
         },
         &vec![],
     );
+
     assert!(claim_minting_maker_result.is_ok());
+
     let axis_config_res: ConfigResponse = app
         .wrap()
         .query_wasm_smart(axis_contract.to_owned(), &QueryMsg::GetConfig {})

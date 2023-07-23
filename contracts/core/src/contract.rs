@@ -5,17 +5,17 @@ use cosmwasm_std::{
     SubMsgResult, Timestamp, WasmMsg,
 };
 use cw2::set_contract_version;
-use sei_cosmwasm::{EpochResponse, SeiMsg, SeiQuerier, SeiQueryWrapper};
+use sei_cosmwasm::{SeiMsg, SeiQueryWrapper};
 
 use crate::error::ContractError;
 
 use crate::helpers::find_attribute_value;
 use crate::state::{
-    load_config, register_axis_contract, register_pair_pool_contract, save_config, Config, CONFIG,
-    PAIR_MARKET_CONTRACT, PAIR_POOL, PAIR_POOL_LP_STAKING_CONTRACT,
+    register_axis_contract, Config, CONFIG, PAIR_MARKET_CONTRACT, PAIR_POOL,
+    PAIR_POOL_LP_STAKING_CONTRACT,
 };
 use axis_protocol::axis::InstantiateMsg as AxisInstantiateMsg;
-use axis_protocol::core::{ConfigResponse, ExecuteMsg, InstantiateMsg, QueryMsg, SudoMsg};
+use axis_protocol::core::{ConfigResponse, ExecuteMsg, InstantiateMsg, QueryMsg};
 use axis_protocol::lp_staking::ExecuteMsg as LpStakingExecuteMsg;
 use axis_protocol::pool::{
     ConfigResponse as PoolConfigReponse, ExecuteMsg as PoolExecuteMsg,
@@ -108,7 +108,7 @@ pub mod execute {
     };
     use cosmwasm_std::{CosmosMsg, Order, SubMsg, WasmMsg};
 
-    use sei_cosmwasm::{EpochResponse, SeiMsg, SeiQuerier, SeiQueryWrapper};
+    use sei_cosmwasm::{SeiMsg, SeiQueryWrapper};
 
     use crate::{
         helpers::{check_denom_and_get_validate_denom, check_owner, check_valid_price},
@@ -250,7 +250,7 @@ pub mod execute {
     pub fn setting(
         deps: DepsMut<SeiQueryWrapper>,
         env: Env,
-        info: MessageInfo,
+        _info: MessageInfo,
     ) -> Result<Response<SeiMsg>, ContractError> {
         //Axis token setting
         //staking setting

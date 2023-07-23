@@ -126,7 +126,7 @@ pub mod execute {
         query::{query_pair_lp_staking_contract, query_pair_market_contract},
         state::{
             load_config, load_state, load_trader, update_pool_fee, update_trader, TraderTreasury,
-            EPOCH_TOTAL_FEE_AMOUNT, POOL_FEE, POOL_MINT_AMOUNT, STATE, TRADER,
+            EPOCH_TOTAL_FEE_AMOUNT, POOL_FEE, POOL_MINT_AMOUNT, TRADER,
         },
     };
 

@@ -38,7 +38,7 @@ use axis::contract::{
 };
 use core::contract::{
     execute as core_execute, instantiate as core_instantiate, query as core_query,
-    reply as core_reply, test_sudo,
+    reply as core_reply,
 };
 use market::contract::{
     execute as market_execute, instantiate as market_instantiate, query as market_query,
