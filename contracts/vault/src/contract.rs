@@ -225,7 +225,7 @@ pub fn query(deps: Deps<SeiQueryWrapper>, _env: Env, msg: QueryMsg) -> StdResult
 pub mod query {
     use crate::state::{load_balance, load_config, load_pending_balance, BALANCE};
     use axis_protocol::vault::{
-        GetAddressBalanceResponse, GetDenomBalanceResponse, GetDenomPendingBalanceResponse,
+        AddressBalanceResponse, DenomBalanceResponse, DenomPendingBalanceResponse,
     };
     use cosmwasm_std::{Decimal, Deps, StdResult};
     use sei_cosmwasm::SeiQueryWrapper;
@@ -233,23 +233,23 @@ pub mod query {
     pub fn get_denom_balance(
         deps: Deps<SeiQueryWrapper>,
         denom: String,
-    ) -> StdResult<GetDenomBalanceResponse> {
+    ) -> StdResult<DenomBalanceResponse> {
         let amount = load_balance(deps.storage, &denom)?;
-        Ok(GetDenomBalanceResponse { denom, amount })
+        Ok(DenomBalanceResponse { denom, amount })
     }
 
     pub fn get_denom_pending_balance(
         deps: Deps<SeiQueryWrapper>,
         denom: String,
-    ) -> StdResult<GetDenomPendingBalanceResponse> {
+    ) -> StdResult<DenomPendingBalanceResponse> {
         let amount = load_pending_balance(deps.storage, &denom)?;
-        Ok(GetDenomPendingBalanceResponse { denom, amount })
+        Ok(DenomPendingBalanceResponse { denom, amount })
     }
 
     pub fn get_address_balance(
         deps: Deps<SeiQueryWrapper>,
         address: String,
-    ) -> StdResult<GetAddressBalanceResponse> {
+    ) -> StdResult<AddressBalanceResponse> {
         let config = load_config(deps.storage)?;
         let addr_es_axis_amount = deps
             .querier
@@ -263,11 +263,11 @@ pub mod query {
             .map(|denom| {
                 let balance = BALANCE.load(deps.storage, &denom)?;
                 let amount = balance * ratio;
-                Ok(GetDenomBalanceResponse { denom, amount })
+                Ok(DenomBalanceResponse { denom, amount })
             })
             .collect::<StdResult<Vec<_>>>()?;
 
-        Ok(GetAddressBalanceResponse {
+        Ok(AddressBalanceResponse {
             balances: balance_vec,
         })
     }

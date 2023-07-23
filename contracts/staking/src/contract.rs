@@ -349,7 +349,7 @@ pub mod query {
 
     use crate::{
         helpers::compute_mint_amount,
-        state::{load_config, load_stakings, load_state, load_un_stakings, StakeInfo, UnStakeInfo},
+        state::{load_config, load_stakings, load_state, load_un_stakings},
     };
 
     use super::*;

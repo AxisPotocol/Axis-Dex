@@ -1,6 +1,6 @@
 use crate::ContractError;
 use axis_protocol::es_axis::QueryMsg as ESAxisQueryMsg;
-use cosmwasm_std::{Addr, QuerierWrapper, StdResult, Uint128};
+use cosmwasm_std::{Addr, QuerierWrapper, Uint128};
 use sei_cosmwasm::SeiQueryWrapper;
 
 // @@query supply 되면 삭제

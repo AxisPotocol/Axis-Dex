@@ -10,7 +10,6 @@ pub struct Config {
     pub lp_denom: String,
     pub base_denom: String,
     pub price_denom: String,
-    pub staking_total: Uint128,
 }
 
 pub fn save_config(storage: &mut dyn Storage, config: Config) -> StdResult<()> {

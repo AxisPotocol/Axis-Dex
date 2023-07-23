@@ -33,7 +33,6 @@ pub fn instantiate(
         lp_denom: msg.lp_denom,
         axis_contract: msg.axis_contract,
         core_contract: msg.core_contract,
-        staking_total: Uint128::zero(),
         base_denom: msg.base_denom,
         price_denom: msg.price_denom,
     };
@@ -317,7 +316,6 @@ pub mod query {
             lp_denom: config.lp_denom,
             base_denom: config.base_denom,
             price_denom: config.price_denom,
-            staking_total: config.staking_total,
         })
     }
     pub fn get_state(deps: Deps<SeiQueryWrapper>) -> StdResult<StateResponse> {
