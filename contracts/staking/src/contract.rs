@@ -30,17 +30,19 @@ pub fn instantiate(
     msg: InstantiateMsg,
 ) -> Result<Response<SeiMsg>, ContractError> {
     let config = Config {
-        core_contract: msg.core_contract,
+        core_contract: msg.core_contract.to_owned(),
         axis_denom: msg.axis_denom,
         es_axis_contract: Addr::unchecked(""),
     };
 
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
     save_config(deps.storage, &config)?;
+    let epoch = query_epoch(deps.querier, &msg.core_contract)?;
     let state = State {
         pending_staking_total: Uint128::zero(),
         staking_total: Uint128::zero(),
         withdraw_pending_total: Uint128::zero(),
+        epoch,
     };
     save_state(deps.storage, &state)?;
     // Instantiate
@@ -69,11 +71,11 @@ pub fn execute(
 ) -> Result<Response<SeiMsg>, ContractError> {
     use execute::*;
     match msg {
-        ExecuteMsg::Setting {} => setting(deps, info),
         ExecuteMsg::Staking {} => staking(deps, info),
         ExecuteMsg::UnStaking {} => un_staking(deps, info),
         ExecuteMsg::Withdraw {} => withdraw(deps, info),
         ExecuteMsg::ClaimReward {} => claim_reward(deps, info),
+        ExecuteMsg::Setting { epoch } => setting(deps, info, epoch),
     }
 }
 
@@ -98,7 +100,7 @@ pub mod execute {
         let config = load_config(deps.storage)?;
         let mut state = load_state(deps.storage)?;
         let axis_coin = check_funds_and_get_axis(info.funds, &config.axis_denom)?;
-        let epoch = query_epoch(deps.querier, &config.core_contract)?;
+        let epoch = state.epoch;
 
         STAKING.update(
             deps.storage,
@@ -139,7 +141,8 @@ pub mod execute {
     ) -> Result<Response<SeiMsg>, ContractError> {
         let config = load_config(deps.storage)?;
         let mut state = load_state(deps.storage)?;
-        let epoch = query_epoch(deps.querier, &config.core_contract)?;
+
+        let epoch = state.epoch;
         let stakings = load_stakings(deps.storage, info.sender.clone())?;
 
         let unlock_epoch = epoch + 1;
@@ -208,7 +211,7 @@ pub mod execute {
         let config = load_config(deps.storage)?;
         let mut state = load_state(deps.storage)?;
         let un_stakings = load_un_stakings(deps.storage, info.sender.clone())?;
-        let epoch = query_epoch(deps.querier, &config.core_contract)?;
+        let epoch = state.epoch;
         let axis_amount: Uint128 = un_stakings
             .iter()
             .filter(|stake| stake.unlock_epoch <= epoch)
@@ -277,6 +280,7 @@ pub mod execute {
     pub fn setting(
         deps: DepsMut<SeiQueryWrapper>,
         info: MessageInfo,
+        epoch: u64,
     ) -> Result<Response<SeiMsg>, ContractError> {
         // Load the configuration and state
         let config = load_config(deps.storage)?;
@@ -286,13 +290,14 @@ pub mod execute {
         check_core_contract(&config.core_contract, &info.sender)?;
 
         // Get the current epoch
-        let current_epoch = query_epoch(deps.querier, &config.core_contract)? - 1;
+        // let current_epoch = query_epoch(deps.querier, &config.core_contract)? - 1;
 
         // Save the total staking amount for the current epoch
-        EPOCH_STAKING_AMOUNT.save(deps.storage, current_epoch, &state.staking_total)?;
+        EPOCH_STAKING_AMOUNT.save(deps.storage, state.epoch, &state.staking_total)?;
 
         // Update the total staking amount and reset the pending staking total
         let is_init = state.staking_total.is_zero();
+        state.epoch = epoch;
         state.staking_total += state.pending_staking_total;
         state.pending_staking_total = Uint128::zero();
 
@@ -359,6 +364,7 @@ pub mod query {
             pending_staking_total: state.pending_staking_total,
             withdraw_pending_total: state.withdraw_pending_total,
             staking_total: state.staking_total,
+            epoch: state.epoch,
         })
     }
 

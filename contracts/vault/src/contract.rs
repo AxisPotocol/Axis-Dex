@@ -9,7 +9,10 @@ use crate::{
     error::ContractError,
     state::{save_config, Config},
 };
-use axis_protocol::vault::{ExecuteMsg, InstantiateMsg, QueryMsg};
+use axis_protocol::{
+    query::query_epoch,
+    vault::{ExecuteMsg, InstantiateMsg, QueryMsg},
+};
 
 // version info for migration info
 const CONTRACT_NAME: &str = "crates.io:vault";
@@ -18,7 +21,7 @@ const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
     deps: DepsMut<SeiQueryWrapper>,
-    env: Env,
+    _env: Env,
     info: MessageInfo,
     msg: InstantiateMsg,
 ) -> Result<Response<SeiMsg>, ContractError> {
@@ -29,11 +32,13 @@ pub fn instantiate(
         es_axis_denom,
         denom_list,
     } = msg;
+    let core_contract = deps.api.addr_validate(&core_contract)?;
     let es_axis_contract = deps.api.addr_validate(&es_axis_contract)?;
-
+    let epoch = query_epoch(deps.querier, &core_contract)?;
     let config = Config {
         owner: info.sender,
-        core_contract: deps.api.addr_validate(&core_contract)?,
+        epoch,
+        core_contract,
         es_axis_contract,
         es_axis_denom,
         denom_list,
@@ -45,7 +50,7 @@ pub fn instantiate(
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn execute(
     deps: DepsMut<SeiQueryWrapper>,
-    env: Env,
+    _env: Env,
     info: MessageInfo,
     msg: ExecuteMsg,
 ) -> Result<Response<SeiMsg>, ContractError> {
@@ -64,7 +69,7 @@ pub fn execute(
             price_amount,
         ),
         ExecuteMsg::Swap {} => execute::swap(deps, info),
-        ExecuteMsg::Setting {} => execute::setting(deps, info),
+        ExecuteMsg::Setting { epoch } => execute::setting(deps, info, epoch),
     }
 }
 pub mod execute {
@@ -182,11 +187,13 @@ pub mod execute {
     pub fn setting(
         deps: DepsMut<SeiQueryWrapper>,
         info: MessageInfo,
+        epoch: u64,
     ) -> Result<Response<SeiMsg>, ContractError> {
         // check core contract
         // pending -> balance 로 이동
 
-        let config = load_config(deps.storage)?;
+        let mut config = load_config(deps.storage)?;
+        config.epoch = epoch;
         check_core_contract(&config.core_contract, &info.sender)?;
 
         for denom in config.denom_list.iter() {
@@ -203,7 +210,7 @@ pub mod execute {
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn query(deps: Deps<SeiQueryWrapper>, env: Env, msg: QueryMsg) -> StdResult<Binary> {
+pub fn query(deps: Deps<SeiQueryWrapper>, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::GetDenomBalance { denom } => to_binary(&query::get_denom_balance(deps, denom)?),
         QueryMsg::GetDenomPendingBalance { denom } => {
@@ -216,14 +223,11 @@ pub fn query(deps: Deps<SeiQueryWrapper>, env: Env, msg: QueryMsg) -> StdResult<
 }
 
 pub mod query {
-    use crate::{
-        state::{load_balance, load_config, load_pending_balance, BALANCE},
-        ContractError,
-    };
+    use crate::state::{load_balance, load_config, load_pending_balance, BALANCE};
     use axis_protocol::vault::{
         GetAddressBalanceResponse, GetDenomBalanceResponse, GetDenomPendingBalanceResponse,
     };
-    use cosmwasm_std::{coin, Coin, Decimal, Deps, StdResult};
+    use cosmwasm_std::{Decimal, Deps, StdResult};
     use sei_cosmwasm::SeiQueryWrapper;
 
     pub fn get_denom_balance(

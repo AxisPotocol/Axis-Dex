@@ -17,6 +17,7 @@ pub fn load_config(storage: &dyn Storage) -> StdResult<Config> {
 }
 #[cw_serde]
 pub struct State {
+    pub epoch: u64,
     pub pending_total_fee_usd: Uint128,
 }
 pub fn save_state(storage: &mut dyn Storage, state: &State) -> StdResult<()> {

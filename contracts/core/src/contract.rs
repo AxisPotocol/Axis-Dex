@@ -16,6 +16,7 @@ use crate::state::{
 };
 use axis_protocol::axis::InstantiateMsg as AxisInstantiateMsg;
 use axis_protocol::core::{ConfigResponse, ExecuteMsg, InstantiateMsg, QueryMsg, SudoMsg};
+use axis_protocol::lp_staking::ExecuteMsg as LpStakingExecuteMsg;
 use axis_protocol::pool::{
     ConfigResponse as PoolConfigReponse, ExecuteMsg as PoolExecuteMsg,
     InstantiateMsg as PoolInstantiateMsg, QueryMsg as PoolQueryMsg,
@@ -33,9 +34,8 @@ pub fn instantiate(
     msg: InstantiateMsg,
 ) -> Result<Response<SeiMsg>, ContractError> {
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
-    // let querier = SeiQuerier::new(&deps.querier);
-    // let epoch = querier.query_epoch()?.epoch.current_epoch;
 
+    //next update is UTC 00
     let config = Config {
         owner: info.sender.clone(),
         epoch: 0,
@@ -45,6 +45,7 @@ pub fn instantiate(
         vault_contract: Addr::unchecked(""),
         next_update_timestamp: Timestamp::from_nanos(msg.next_update_timestamp),
     };
+
     CONFIG.save(deps.storage, &config)?;
     //@@axis instantiate
     let axis_instantiate_msg = WasmMsg::Instantiate {
@@ -99,6 +100,8 @@ pub fn execute(
 }
 
 pub mod execute {
+    use std::vec;
+
     use axis_protocol::{
         axis::ExecuteMsg as AxisExecuteMsg, staking::ExecuteMsg as StakingExecuteMsg,
         vault::ExecuteMsg as VaultExecuteMsg,
@@ -260,33 +263,49 @@ pub mod execute {
             true => Ok(()),
             false => Err(ContractError::InvalidEpoch {}),
         }?;
-        // println!("vault contract = {:?}", config.vault_contract);
-        // println!("axis contract = {:?}", config.axis_contract);
+
+        config.next_update_timestamp = config.next_update_timestamp.plus_days(1);
+        save_config(deps.storage, &config)?;
+
+        let epoch = config.epoch;
         let axis_setting_msg = CosmosMsg::Wasm(WasmMsg::Execute {
             contract_addr: config.axis_contract.to_string(),
-            msg: to_binary(&AxisExecuteMsg::Setting {})?,
+            msg: to_binary(&AxisExecuteMsg::Setting { epoch })?,
             funds: vec![],
         });
         let vault_setting_msg = CosmosMsg::Wasm(WasmMsg::Execute {
             contract_addr: config.vault_contract.to_string(),
-            msg: to_binary(&VaultExecuteMsg::Setting {})?,
+            msg: to_binary(&VaultExecuteMsg::Setting { epoch })?,
             funds: vec![],
         });
         let axis_staking_setting_msg = CosmosMsg::Wasm(WasmMsg::Execute {
             contract_addr: config.staking_contract.to_string(),
-            msg: to_binary(&StakingExecuteMsg::Setting {})?,
+            msg: to_binary(&StakingExecuteMsg::Setting { epoch })?,
             funds: vec![],
         });
 
-        config.epoch += 1;
-        config.next_update_timestamp = config.next_update_timestamp.plus_days(1);
-        save_config(deps.storage, &config)?;
-        // println!("@@@@@@@@@@@@@@@@@");
-        Ok(Response::new().add_messages(vec![
-            axis_setting_msg,
-            vault_setting_msg,
-            axis_staking_setting_msg,
-        ]))
+        let lp_staking_setting_msg = {
+            let lp_staking_setting_msgs = PAIR_POOL_LP_STAKING_CONTRACT
+                .range(deps.storage, None, None, Order::Ascending)
+                .into_iter()
+                .map(|item| {
+                    let (_, contract_addr) = item?;
+                    Ok(CosmosMsg::Wasm(WasmMsg::Execute {
+                        contract_addr: contract_addr.to_string(),
+                        msg: to_binary(&LpStakingExecuteMsg::Setting { epoch })?,
+                        funds: vec![],
+                    }))
+                })
+                .collect::<StdResult<Vec<CosmosMsg<SeiMsg>>>>()?;
+            lp_staking_setting_msgs
+        };
+        Ok(Response::new()
+            .add_messages(vec![
+                axis_setting_msg,
+                vault_setting_msg,
+                axis_staking_setting_msg,
+            ])
+            .add_messages(lp_staking_setting_msg))
     }
     pub fn update_config(
         deps: DepsMut<SeiQueryWrapper>,
@@ -458,26 +477,4 @@ pub fn reply(
         },
         _ => Err(ContractError::InvalidReplyId {}),
     }
-}
-
-#[cfg_attr(not(feature = "library"), entry_point)]
-pub fn test_sudo(
-    deps: DepsMut<SeiQueryWrapper>,
-    _env: Env,
-    msg: SudoMsg,
-) -> Result<Response<SeiMsg>, ContractError> {
-    match msg {
-        SudoMsg::NewEpoch { epoch } => handle_new_epoch(deps, epoch),
-    }
-}
-
-pub fn handle_new_epoch(
-    deps: DepsMut<SeiQueryWrapper>,
-    epoch: u64,
-) -> Result<Response<SeiMsg>, ContractError> {
-    let mut config = load_config(deps.storage)?;
-    config.epoch = epoch;
-    println!("config!!!!!!!!{:?}", config);
-    save_config(deps.storage, &config)?;
-    Ok(Response::new())
 }

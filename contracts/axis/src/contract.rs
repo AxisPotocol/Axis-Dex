@@ -1,3 +1,4 @@
+use axis_protocol::query::query_epoch;
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
 use cosmwasm_std::{
@@ -38,9 +39,10 @@ pub fn instantiate(
         mint_per_epoch_maker_amount: (Uint128::new(300_000_000_000_000) / Uint128::new(365 * 5)),
     };
     CONFIG.save(deps.storage, &config)?;
-
+    let epoch = query_epoch(deps.querier, &info.sender)?;
     let state = State {
         pending_total_fee_usd: Uint128::zero(),
+        epoch,
     };
     save_state(deps.storage, &state)?;
 
@@ -107,7 +109,7 @@ pub fn execute(
             sender,
             amount,
         } => claim_minting_maker(deps, info, base_denom, price_denom, sender, amount),
-        ExecuteMsg::Setting {} => setting(deps, info),
+        ExecuteMsg::Setting { epoch } => setting(deps, info, epoch),
         // ExecuteMsg::RegisterAirDrop { air_drop_contract } => {
         //     execute::register_airdrop(deps, info, air_drop_contract)
         // }
@@ -123,11 +125,10 @@ pub mod execute {
         helpers::{check_core_contract, check_lp_staking_contract, check_market_contract},
         query::{query_pair_lp_staking_contract, query_pair_market_contract},
         state::{
-            load_config, load_state, load_trader, update_pool_fee, update_trader,
+            load_config, load_state, load_trader, update_pool_fee, update_trader, TraderTreasury,
             EPOCH_TOTAL_FEE_AMOUNT, POOL_FEE, POOL_MINT_AMOUNT, STATE, TRADER,
         },
     };
-    use axis_protocol::query::query_epoch;
 
     use super::*;
     pub fn add_fee_amount(
@@ -141,7 +142,7 @@ pub mod execute {
         let config = load_config(deps.storage)?;
         let mut state = load_state(deps.storage)?;
         // @@ 굳이 market_contract 여야만함? 굳이굳이?????????????
-        let epoch = query_epoch(deps.querier, &config.core_contract)?;
+        let epoch = state.epoch;
 
         let market_contract = query_pair_market_contract(
             deps.querier,
@@ -170,18 +171,23 @@ pub mod execute {
     ) -> Result<Response<SeiMsg>, ContractError> {
         let config = load_config(deps.storage)?;
         let traders = load_trader(deps.storage, &info.sender)?;
-
+        let state = load_state(deps.storage)?;
         let mint_amount: Uint128 = traders
             .iter()
+            .filter(|treasury| treasury.epoch < state.epoch)
             .map(|trader| {
                 let total_fee_amount = EPOCH_TOTAL_FEE_AMOUNT.load(deps.storage, trader.epoch)?;
-
                 let ratio = Decimal::from_ratio(trader.fee_amount, total_fee_amount);
                 Ok(config.mint_per_epoch_trader_amount * ratio)
             })
             .sum::<Result<Uint128, ContractError>>()?;
 
-        TRADER.remove(deps.storage, &info.sender);
+        let remain_treasury = traders
+            .into_iter()
+            .filter(|treausry| treausry.epoch == state.epoch)
+            .collect::<Vec<TraderTreasury>>();
+
+        TRADER.save(deps.storage, &info.sender, &remain_treasury)?;
 
         let token = coin(mint_amount.into(), config.axis_denom);
 
@@ -235,13 +241,14 @@ pub mod execute {
     pub fn setting(
         deps: DepsMut<SeiQueryWrapper>,
         info: MessageInfo,
+        epoch: u64,
     ) -> Result<Response<SeiMsg>, ContractError> {
         let config = load_config(deps.storage)?;
         check_core_contract(&config.core_contract, &info.sender)?;
-        let epoch = query_epoch(deps.querier, &config.core_contract)? - 1;
-        //24 hour
+
         let mut state = load_state(deps.storage)?;
-        EPOCH_TOTAL_FEE_AMOUNT.save(deps.storage, epoch, &state.pending_total_fee_usd)?;
+
+        EPOCH_TOTAL_FEE_AMOUNT.save(deps.storage, state.epoch, &state.pending_total_fee_usd)?;
 
         let pairs = POOL_FEE
             .range(deps.storage, None, None, Order::Ascending)
@@ -258,6 +265,7 @@ pub mod execute {
         POOL_FEE.clear(deps.storage);
 
         state.pending_total_fee_usd = Uint128::zero();
+        state.epoch = epoch;
         save_state(deps.storage, &state)?;
 
         Ok(Response::new())

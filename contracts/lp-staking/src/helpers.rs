@@ -1,4 +1,6 @@
-use cosmwasm_std::{Coin, Decimal, DepsMut, Order, QuerierWrapper, StdResult, Storage, Uint128};
+use cosmwasm_std::{
+    Addr, Coin, Decimal, DepsMut, Order, QuerierWrapper, StdResult, Storage, Uint128,
+};
 use cw_storage_plus::Bound;
 use sei_cosmwasm::SeiQueryWrapper;
 
@@ -18,6 +20,13 @@ pub fn check_funds_and_get_lp(
         .ok_or_else(|| ContractError::InvalidDenom {})?;
 
     Ok(asset.clone())
+}
+
+pub fn check_core_contract(core_contract: &Addr, sender: &Addr) -> Result<(), ContractError> {
+    match *core_contract == *sender {
+        true => Ok(()),
+        false => Err(ContractError::Unauthorized {}),
+    }
 }
 
 pub fn compute_mint_amount(
@@ -42,11 +51,12 @@ pub fn compute_mint_amount(
         .range(
             deps.storage,
             Some(Bound::inclusive(start_epoch)),
-            Some(Bound::exclusive(now_epoch)),
+            Some(Bound::inclusive(now_epoch)),
             Order::Ascending,
         )
         .into_iter()
         .map(|data| {
+            println!("{:?}", data);
             let (key, total) = data?;
             let ratio = Decimal::from_ratio(staking_amount, total);
             Ok((key, ratio))

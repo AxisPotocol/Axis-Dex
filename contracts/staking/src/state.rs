@@ -21,6 +21,7 @@ pub struct State {
     pub pending_staking_total: Uint128,
     pub withdraw_pending_total: Uint128,
     pub staking_total: Uint128,
+    pub epoch: u64,
 }
 pub fn save_state(storage: &mut dyn Storage, state: &State) -> StdResult<()> {
     STATE.save(storage, state)

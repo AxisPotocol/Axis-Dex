@@ -6,6 +6,7 @@ use cw_storage_plus::{Item, Map};
 pub struct Config {
     pub owner: Addr,
     pub core_contract: Addr,
+    pub epoch: u64,
     pub es_axis_contract: Addr,
     pub es_axis_denom: String,
     pub denom_list: Vec<String>,
