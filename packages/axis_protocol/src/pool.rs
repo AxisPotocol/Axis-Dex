@@ -1,4 +1,3 @@
-use crate::lp_staking::InstantiateMsg as LpStakingInstantiateMsg;
 use crate::market::InstantiateMsg as MarketInstantiateMsg;
 use cosmwasm_schema::{cw_serde, QueryResponses};
 use cosmwasm_std::{Addr, Decimal, Uint128};

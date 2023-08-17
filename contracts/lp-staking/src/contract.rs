@@ -87,7 +87,9 @@ mod execute {
         info: MessageInfo,
     ) -> Result<Response<SeiMsg>, ContractError> {
         let config = load_config(deps.storage)?;
+
         let lp_coin = check_funds_and_get_lp(info.funds, &config.lp_denom)?;
+
         let mut state = load_state(deps.storage)?;
         STAKING.update(
             deps.storage,
@@ -95,8 +97,9 @@ mod execute {
             |exsits| -> StdResult<Vec<StakeInfo>> {
                 match exsits {
                     Some(mut stakings) => {
-                        if let Some(stake) =
-                            stakings.iter_mut().find(|s| s.start_epoch == state.epoch)
+                        if let Some(stake) = stakings
+                            .iter_mut()
+                            .find(|s| s.start_epoch == state.epoch + 1)
                         {
                             stake.staking_amount += lp_coin.amount;
                         } else {
@@ -130,7 +133,10 @@ mod execute {
     ) -> Result<Response<SeiMsg>, ContractError> {
         let config = load_config(deps.storage)?;
         let mut state = load_state(deps.storage)?;
-        let stakings = load_stakings(deps.storage, &info.sender)?;
+        let stakings = load_stakings(deps.storage, &info.sender)?
+            .into_iter()
+            .filter(|s| s.start_epoch <= state.epoch)
+            .collect::<Vec<StakeInfo>>();
 
         let unlock_epoch = state.epoch + 1;
 
@@ -168,18 +174,24 @@ mod execute {
         state.withdraw_pending_total += unstaking_amount;
         state.staking_total -= unstaking_amount;
         save_state(deps.storage, state)?;
-        let claim_msg = CosmosMsg::Wasm(WasmMsg::Execute {
-            contract_addr: config.axis_contract.to_string(),
-            msg: to_binary(&AxisExecuteMsg::ClaimMintMaker {
-                base_denom: config.base_denom,
-                price_denom: config.price_denom,
-                sender: info.sender,
-                amount: axis_amount,
-            })?,
-            funds: vec![],
-        });
-        Ok(Response::new().add_message(claim_msg))
+        match axis_amount.is_zero() {
+            true => Ok(Response::new()),
+            false => {
+                let claim_msg = CosmosMsg::Wasm(WasmMsg::Execute {
+                    contract_addr: config.axis_contract.to_string(),
+                    msg: to_binary(&AxisExecuteMsg::ClaimMintMaker {
+                        base_denom: config.base_denom,
+                        price_denom: config.price_denom,
+                        sender: info.sender,
+                        amount: axis_amount,
+                    })?,
+                    funds: vec![],
+                });
+                Ok(Response::new().add_message(claim_msg))
+            }
+        }
     }
+
     pub fn withdraw(
         deps: DepsMut<SeiQueryWrapper>,
         info: MessageInfo,
@@ -216,6 +228,7 @@ mod execute {
         });
         Ok(Response::new().add_submessage(axis_send_msg))
     }
+
     pub fn claim_reward(
         deps: DepsMut<SeiQueryWrapper>,
         info: MessageInfo,
@@ -229,7 +242,6 @@ mod execute {
             if stake.start_epoch == state.epoch {
                 continue;
             }
-
             let reward = compute_mint_amount(
                 &deps,
                 &config,
@@ -323,7 +335,10 @@ pub mod query {
 
         Ok(StateResponse {
             staking_total: state.staking_total,
+
             withdraw_pending_total: state.withdraw_pending_total,
+            epoch: state.epoch,
+            stake_pending_total: state.stake_pending_total,
         })
     }
 

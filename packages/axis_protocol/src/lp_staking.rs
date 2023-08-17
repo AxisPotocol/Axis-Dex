@@ -41,12 +41,13 @@ pub struct ConfigResponse {
     pub lp_denom: String,
     pub base_denom: String,
     pub price_denom: String,
-    pub staking_total: Uint128,
 }
 
 #[cw_serde]
 pub struct StateResponse {
+    pub epoch: u64,
     pub staking_total: Uint128,
+    pub stake_pending_total: Uint128,
     pub withdraw_pending_total: Uint128,
 }
 

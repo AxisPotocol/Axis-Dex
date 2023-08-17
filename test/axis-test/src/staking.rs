@@ -8,8 +8,8 @@ use sei_integration_tests::{helper::mock_app, module::SeiModule};
 
 use crate::{
     app::{
-        self, init_default_balances, init_exchange_rates, setup_init, ADMIN, BTC_DENOM, TRADER1,
-        USDC_DENOM,
+        self, init_default_balances, init_exchange_rates, setup_init, Contracts, ADMIN, BTC_DENOM,
+        TRADER1, USDC_DENOM,
     },
     staking,
     utils::{setting, staking, un_staking},
@@ -422,4 +422,50 @@ fn test_cliam_reward() {
             }]
         }
     )
+}
+
+#[test]
+fn test_setting() {
+    let mut app = mock_app(init_default_balances, init_exchange_rates());
+
+    let contracts = setup_init(&mut app, BTC_DENOM, USDC_DENOM);
+
+    let Contracts {
+        core_contract,
+        staking_contract,
+        axis_contract,
+        ..
+    } = contracts;
+    let axis_res: AxisConfigResponse = app
+        .wrap()
+        .query_wasm_smart(axis_contract, &AxisQueryMsg::GetConfig {})
+        .unwrap();
+
+    let axis_denom = axis_res.axis_denom;
+    let staking_admin_axis = app
+        .wrap()
+        .query_balance(ADMIN, axis_denom.to_owned())
+        .unwrap();
+    let _ = staking(
+        &mut app,
+        &staking_contract,
+        &Addr::unchecked(ADMIN),
+        &vec![staking_admin_axis.to_owned()],
+    )
+    .unwrap();
+
+    let setting_result = app.execute_contract(
+        core_contract.to_owned(),
+        staking_contract.to_owned(),
+        &ExecuteMsg::Setting { epoch: 1 },
+        &vec![],
+    );
+    assert!(setting_result.is_ok());
+
+    let staking_state_res: StateResponse = app
+        .wrap()
+        .query_wasm_smart(staking_contract.to_owned(), &QueryMsg::GetState {})
+        .unwrap();
+    assert_eq!(staking_state_res.epoch, 1);
+    assert_eq!(staking_state_res.staking_total, staking_admin_axis.amount);
 }

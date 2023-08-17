@@ -8,13 +8,10 @@ use crate::{
     ContractError,
 };
 
-pub fn check_funds_and_get_lp(
-    funds: Vec<Coin>,
-    axis_denom: &String,
-) -> Result<Coin, ContractError> {
+pub fn check_funds_and_get_lp(funds: Vec<Coin>, lp_denom: &String) -> Result<Coin, ContractError> {
     let asset = funds
         .iter()
-        .find(|c| c.denom == *axis_denom)
+        .find(|c| c.denom == *lp_denom)
         .ok_or_else(|| ContractError::InvalidDenom {})?;
 
     Ok(asset.clone())

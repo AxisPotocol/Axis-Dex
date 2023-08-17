@@ -34,17 +34,17 @@ library = []
 
 
 [dependencies]
-axis-protocol ={path="../../packages/axis_protocol",default-features=false }
-core = {path="../../contracts/core",default-features = false}
-pool = {path="../../contracts/pool",default-features = false}
-market = {path="../../contracts/market",default-features = false}
-lp-staking = {path="../../contracts/lp-staking",default-features=false}
-staking ={path="../../contracts/staking",default-features=false}
-vault={path="../../contracts/vault",default-features=false}
-axis ={path="../../contracts/axis",default-features=false}
-es-axis ={path="../../contracts/es-axis",default-features=false}
+axis-protocol = { path = "../../packages/axis_protocol", default-features = false }
+core = { path = "../../contracts/core", default-features = false }
+pool = { path = "../../contracts/pool", default-features = false }
+market = { path = "../../contracts/market", default-features = false }
+lp-staking = { path = "../../contracts/lp-staking", default-features = false }
+staking = { path = "../../contracts/staking", default-features = false }
+vault = { path = "../../contracts/vault", default-features = false }
+axis = { path = "../../contracts/axis", default-features = false }
+es-axis = { path = "../../contracts/es-axis", default-features = false }
 cosmwasm-schema = "1.1.3"
-cosmwasm-std = {version = "1.1.3",features=["cosmwasm_1_1"]}
+cosmwasm-std = { version = "1.1.3", features = ["cosmwasm_1_1"] }
 cosmwasm-storage = "1.1.3"
 cw-storage-plus = "1.0.1"
 cw2 = "1.0.1"
@@ -56,5 +56,3 @@ sei-integration-tests = "0.4.10"
 cw-multi-test = "0.16.2"
 
 anyhow = "1.0.71"
-
-

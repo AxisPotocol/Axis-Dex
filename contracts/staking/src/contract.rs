@@ -108,7 +108,9 @@ pub mod execute {
             |exsits| -> StdResult<Vec<StakeInfo>> {
                 match exsits {
                     Some(mut stakings) => {
-                        if let Some(stake) = stakings.iter_mut().find(|s| s.start_epoch == epoch) {
+                        if let Some(stake) =
+                            stakings.iter_mut().find(|s| s.start_epoch == epoch + 1)
+                        {
                             stake.staking_amount += axis_coin.amount;
                         } else {
                             stakings.push(StakeInfo {

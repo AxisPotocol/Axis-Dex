@@ -1,5 +1,5 @@
 use cosmwasm_schema::{cw_serde, QueryResponses};
-use cosmwasm_std::{Addr, Coin, Uint128};
+use cosmwasm_std::{Addr, Uint128};
 
 #[cw_serde]
 pub struct InstantiateMsg {
@@ -45,7 +45,6 @@ pub enum QueryMsg {
         base_denom: String,
         price_denom: String,
         start_epoch: u64,
-        end_epoch: u64,
     },
     #[returns(TotalSupplyResponse)]
     GetTotalSupply {},

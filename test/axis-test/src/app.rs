@@ -5,12 +5,11 @@ use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{
     coin,
     testing::{MockApi, MockStorage},
-    Addr, Api, Decimal, Empty, GovMsg, IbcMsg, IbcQuery, Response, Storage, SubMsgResult, Uint128,
-    Uint64,
+    Addr, Api, Decimal, Empty, GovMsg, IbcMsg, IbcQuery, Storage, Uint64,
 };
 use cw_multi_test::{
-    App, AppResponse, BankKeeper, ContractWrapper, DistributionKeeper, Executor, FailingModule,
-    Router, StakeKeeper, WasmKeeper,
+    App, BankKeeper, ContractWrapper, DistributionKeeper, Executor, FailingModule, Router,
+    StakeKeeper, WasmKeeper,
 };
 
 use axis_protocol::{
@@ -22,7 +21,7 @@ use axis_protocol::{
     },
     es_axis::{ConfigResponse as EsAxisConfigResponse, QueryMsg as EsAxisQueryMsg},
     market::InstantiateMsg as MarketInstantiateMsg,
-    pool::{InstantiateMsg as PoolInstantiateMsg, QueryMsg as PoolQueryMsg},
+    pool::InstantiateMsg as PoolInstantiateMsg,
     staking::{
         ConfigResponse as StakingConfigResponse, InstantiateMsg as StakingInstatiateMsg,
         QueryMsg as StakingQueryMsg,

@@ -1,5 +1,5 @@
 use cosmwasm_schema::{cw_serde, QueryResponses};
-use cosmwasm_std::{Addr, Uint128};
+use cosmwasm_std::Uint128;
 
 #[cw_serde]
 pub struct InstantiateMsg {
@@ -26,27 +26,27 @@ pub enum ExecuteMsg {
 #[cw_serde]
 #[derive(QueryResponses)]
 pub enum QueryMsg {
-    #[returns(GetDenomBalanceResponse)]
+    #[returns(DenomBalanceResponse)]
     GetDenomBalance { denom: String },
-    #[returns(GetDenomPendingBalanceResponse)]
+    #[returns(DenomPendingBalanceResponse)]
     GetDenomPendingBalance { denom: String },
-    #[returns(GetAddressBalanceResponse)]
+    #[returns(AddressBalanceResponse)]
     GetAddressBalance { address: String },
 }
 
 #[cw_serde]
-pub struct GetDenomBalanceResponse {
+pub struct DenomBalanceResponse {
     pub denom: String,
     pub amount: Uint128,
 }
 
 #[cw_serde]
-pub struct GetDenomPendingBalanceResponse {
+pub struct DenomPendingBalanceResponse {
     pub denom: String,
     pub amount: Uint128,
 }
 
 #[cw_serde]
-pub struct GetAddressBalanceResponse {
-    pub balances: Vec<GetDenomBalanceResponse>,
+pub struct AddressBalanceResponse {
+    pub balances: Vec<DenomBalanceResponse>,
 }

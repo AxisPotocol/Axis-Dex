@@ -8,7 +8,7 @@ use cosmwasm_std::{
     to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, Uint128,
 };
 use cw2::set_contract_version;
-use sei_cosmwasm::{SeiMsg, SeiQueryWrapper};
+use sei_cosmwasm::{Order, SeiMsg, SeiQueryWrapper};
 
 use crate::error::ContractError;
 
@@ -156,7 +156,6 @@ pub mod execute {
         )?;
 
         //funds 최소 금액 확인
-
         let open_fee_amount = {
             match (limit_loss_price, limit_profit_price) {
                 (None, None) => calculate_open_fee_amount(

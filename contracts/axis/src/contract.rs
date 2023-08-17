@@ -225,7 +225,9 @@ pub mod execute {
         )?;
 
         check_lp_staking_contract(&pair_lp_staking_contract, &info.sender)?;
+
         let axis_token = coin(amount.into(), config.axis_denom);
+
         let mint_msg = SeiMsg::MintTokens {
             amount: axis_token.to_owned(),
         };

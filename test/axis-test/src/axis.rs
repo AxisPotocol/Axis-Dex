@@ -113,7 +113,7 @@ fn test_claim_minting_trader() {
         &ExecuteMsg::ClaimMintTrader {},
         &vec![],
     );
-    println!("claim_mint_trader_result = {:?}", claim_mint_trader_result);
+
     assert!(claim_mint_trader_result.is_ok());
 
     let axis_config_res: ConfigResponse = app
@@ -203,7 +203,6 @@ pub fn test_claim_minting_maker() {
                 base_denom: base_denom.to_owned(),
                 price_denom: price_denom.to_owned(),
                 start_epoch: 0,
-                end_epoch: 2,
             },
         )
         .unwrap();
