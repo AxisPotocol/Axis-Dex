@@ -49,7 +49,6 @@ pub fn calculate_lp_mint_amount(
                 Decimal::from_atomics(send_stable_amount, stable_decimal.into()).unwrap();
             let sqrt_dec = (asset_amount_dec * stable_amount_dec).sqrt();
             let lp_amount = sqrt_dec * Uint128::new(10u128.pow(lp_decimal.into()));
-
             Ok((lp_amount, send_asset_amount, send_stable_amount))
         }
         false => {
